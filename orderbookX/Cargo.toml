@@ -1,0 +1,23 @@
+[package]
+name = "orderbookX"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+flamegraph = "0.6"
+indexmap = { version = "2.0", features = ["rayon"] }
+rand = "0.8"
+rayon = "1.7"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tracing = "0.1.37"
+mersenne-twister-m = "0.3.0"
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+
+[dependencies.proptest]
+workspace = true
+
+[dependencies.test-strategy]
+workspace = true
+
+[profile.release]
+lto = "fat"
