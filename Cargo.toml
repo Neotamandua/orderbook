@@ -1,7 +1,7 @@
 [workspace]
 
 members = [
-	#"grpc-service",
+	"grpc-service",
 	"orderbookX",
 ]
 

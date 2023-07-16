@@ -1,0 +1,51 @@
+// version of protocol buffer used
+syntax = "proto3";
+
+// package name for the buffer will be used later
+package api;
+
+service Greeter {
+  rpc SayHello (HelloRequest) returns (HelloReply);
+}
+
+service Api {
+  rpc InsertOrder (InsertOrderRequest) returns (InsertOrderReply);
+  rpc RemoveOrder (RemoveOrderRequest) returns (RemoveOrderReply);
+}
+
+message HelloRequest {
+ string name = 1;
+}
+
+message HelloReply {
+  string message = 1;
+}
+
+// Insert Order
+message InsertOrderRequest {
+  OrderType order_type = 1;
+  float order_price = 2;
+  uint64 identifier = 3;
+  uint64 qty = 4;
+}
+
+message InsertOrderReply {
+  bool success = 1;
+}
+
+enum OrderType {
+  Market = 0;
+  GTC = 1;
+  FOK = 2;
+  IOC = 3;
+}
+
+// Remove Order
+message RemoveOrderRequest {
+  float order_price = 1;
+  int64 identifier = 2;
+}
+
+message RemoveOrderReply {
+  bool success = 1;
+}

@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use crate::orderbook::Order;
 
 /// MatchingEngine providing the given order types.

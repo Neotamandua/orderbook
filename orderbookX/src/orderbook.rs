@@ -109,11 +109,15 @@ impl OrderBook {
         Self::remove_order(remove_order, order_book)
     }
 
+    // ToDo: Rename this function, its hella confusing
     pub fn remove_ask_price_level(&mut self, key: &Price) -> Option<VecDeque<IdentifiableOrder>> {
+        // ToDo: With some indexing magic in the matching functions this might be able to use remove
         self.asks.order_list.shift_remove(key) // O(n)
     }
 
+    // ToDo: Rename this function, its hella confusing
     pub fn remove_bid_price_level(&mut self, key: &Price) -> Option<VecDeque<IdentifiableOrder>> {
+        // ToDo: With some indexing magic in the matching functions this might be able to use remove
         self.bids.order_list.shift_remove(key) // O(n)
     }
 
@@ -132,6 +136,11 @@ impl OrderBook {
                 order_book.remove_entry(remove_order.get_price());
             } else {
                 //orders_on_price_level.remove(index)
+                // Maybe save index + price as order id
+                // Multiple entries, delete specific Order in FIFO Queue
+                // ToDo: think about memory reallocation and if the order can be yanked somehow first before removing it
+                // ToDo: maybe let matching remove it or some worker in the background during low load times
+                //todo!()
             }
         }
 
@@ -488,6 +497,7 @@ impl MatchingEngine for OrderBook {
     }
 
     fn match_and_insert(&mut self, order: Order, order_type: OrderType) {
+        // ToDo: Create a market_sell_until/market_buy_until or use the match_orders function
         match order_type {
             OrderType::Buy => {
                 //self.match_orders(self.sell_side.order_list, order.identifiable_order.get_qty());
