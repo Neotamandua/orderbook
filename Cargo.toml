@@ -1,0 +1,11 @@
+[workspace]
+
+members = [
+	#"grpc-service",
+	"orderbookX",
+]
+
+[workspace.dependencies]
+orderbookX = { path = "orderbookX" }
+proptest = "1.2.0"
+test-strategy = "0.3.1"
