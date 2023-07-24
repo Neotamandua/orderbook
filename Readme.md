@@ -6,6 +6,14 @@
 
 
 # Orderbook & Matching Engine (Explanatory Project)
+![Powered by Rust][badge_rust]
+![License: MPL 2.0][badge_license]
+![Github CI][github_ci]
+
+[badge_rust]: https://badgers.space/badge/Powered%20by/Rust/orange
+[badge_license]: https://badgers.space/github/license/Neotamandua/orderbook
+[github_ci]: https://badgers.space/github/checks/Neotamandua/orderbook/development/Test%20Build?label=build
+
 > Price/time priority i.e. FIFO Design
 
 This Orderbook & Matching Engine project is designed to serve as an educational tool to introduce and explain the concept of orderbooks through live interaction. Please note that this project is not intended for production or professional use, but rather to facilitate a better understanding of how markets work.

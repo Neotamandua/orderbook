@@ -1,0 +1,17 @@
+name: Rust Build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - development
+
+jobs:
+  build:
+    name: Test Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - run: rustup toolchain install stable --profile minimal
+      - name: cargo build test
+        run: cargo build
