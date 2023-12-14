@@ -28,10 +28,7 @@ impl fmt::Display for OrderBook {
 
 impl OrderBook {
     fn new(bids: OrderList, asks: OrderList) -> Self {
-        Self {
-            bids,
-            asks,
-        }
+        Self { bids, asks }
     }
 }
 
@@ -66,11 +63,6 @@ impl OrderBook {
         }
     }
 
-    fn highest_bids_mut(&mut self) -> Option<(&Price, &mut VecDeque<IdentifiableOrder>)> {
-        // get highest bidders from buy side
-        self.bids.order_list.last_mut()
-    }
-
     fn lowest_ask(&self) -> Option<(&Price, &IdentifiableOrder)> {
         // get lowest ask price from sell side
         if let Some((price, orders)) = self.asks.order_list.first() {
@@ -80,8 +72,23 @@ impl OrderBook {
         }
     }
 
+    pub fn highest_bids(&self) -> Option<(&Price, &VecDeque<IdentifiableOrder>)> {
+        // get highest bidders from buy side
+        self.bids.order_list.last()
+    }
+
+    pub fn lowest_asks(&self) -> Option<(&Price, &VecDeque<IdentifiableOrder>)> {
+        // get lowest asks from sell side
+        self.asks.order_list.first()
+    }
+
+    fn highest_bids_mut(&mut self) -> Option<(&Price, &mut VecDeque<IdentifiableOrder>)> {
+        // get highest bidders from buy side
+        self.bids.order_list.last_mut()
+    }
+
     fn lowest_asks_mut(&mut self) -> Option<(&Price, &mut VecDeque<IdentifiableOrder>)> {
-        // get lowest ask price from sell side
+        // get lowest asks from sell side
         self.asks.order_list.first_mut()
     }
 
@@ -110,13 +117,13 @@ impl OrderBook {
     }
 
     // ToDo: Rename this function, its hella confusing
-    pub fn remove_ask_price_level(&mut self, key: &Price) -> Option<VecDeque<IdentifiableOrder>> {
+    fn remove_ask_price_level(&mut self, key: &Price) -> Option<VecDeque<IdentifiableOrder>> {
         // ToDo: With some indexing magic in the matching functions this might be able to use remove
         self.asks.order_list.shift_remove(key) // O(n)
     }
 
     // ToDo: Rename this function, its hella confusing
-    pub fn remove_bid_price_level(&mut self, key: &Price) -> Option<VecDeque<IdentifiableOrder>> {
+    fn remove_bid_price_level(&mut self, key: &Price) -> Option<VecDeque<IdentifiableOrder>> {
         // ToDo: With some indexing magic in the matching functions this might be able to use remove
         self.bids.order_list.shift_remove(key) // O(n)
     }
