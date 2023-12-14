@@ -4,7 +4,7 @@ use std::{
     hash::{Hash, Hasher},
 };
 
-#[derive(Eq, PartialEq, Debug, Clone)]
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub struct Price {
     main_unit: usize,
     // clamp this between 0 and 99
@@ -51,10 +51,16 @@ impl From<f64> for Price {
 
         let main_unit = value as usize;
         let sub_unit = ((value - main_unit as f64) * 100.0).round() as u8;
-            Price {
-                main_unit,
-                sub_unit,
-            }
+        Price {
+            main_unit,
+            sub_unit,
+        }
+    }
+}
+
+impl From<Price> for f32 {
+    fn from(value: Price) -> Self {
+        value.main_unit as f32 + (value.sub_unit as f32 / 100.00)
     }
 }
 
@@ -65,11 +71,10 @@ impl From<f32> for Price {
         let value = if value == 0.00 { 0.01 } else { value };
         let main_unit = value as usize;
         let sub_unit = ((value - main_unit as f32) * 100.0).round() as u8;
-            Price {
-                main_unit,
-                sub_unit,
-            }
-
+        Price {
+            main_unit,
+            sub_unit,
+        }
     }
 }
 

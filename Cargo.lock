@@ -1052,12 +1052,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mersenne-twister-m"
-version = "0.3.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "438446d62179aa79c9244f8ca5b5bc0d57292781c8ecdf8d8adb9e83700f61a7"
-
-[[package]]
 name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1180,7 +1174,6 @@ version = "0.1.0"
 dependencies = [
  "flamegraph",
  "indexmap 2.0.0",
- "mersenne-twister-m",
  "proptest",
  "rand",
  "rayon",

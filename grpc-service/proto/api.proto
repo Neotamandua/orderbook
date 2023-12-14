@@ -8,11 +8,6 @@ service Greeter {
   rpc SayHello (HelloRequest) returns (HelloReply);
 }
 
-service Api {
-  rpc InsertOrder (InsertOrderRequest) returns (InsertOrderReply);
-  rpc RemoveOrder (RemoveOrderRequest) returns (RemoveOrderReply);
-}
-
 message HelloRequest {
  string name = 1;
 }
@@ -20,6 +15,37 @@ message HelloRequest {
 message HelloReply {
   string message = 1;
 }
+
+service Api {
+  rpc InsertBuyOrder (InsertOrderRequest) returns (InsertOrderReply);
+  rpc RemoveBuyOrder (RemoveOrderRequest) returns (RemoveOrderReply);
+  rpc InsertSellOrder (InsertOrderRequest) returns (InsertOrderReply);
+  rpc RemoveSellOrder (RemoveOrderRequest) returns (RemoveOrderReply);
+  rpc GetHighestBid (ClosestOrderRequest) returns (OrderReply);
+  rpc GetLowestAsk (ClosestOrderRequest) returns (OrderReply);
+  rpc GetBids (SideRequest) returns (OrderbookReply);
+  rpc GetAsks (SideRequest) returns (OrderbookReply);
+}
+
+// Get one side of the Orderbook
+message SideRequest {
+
+}
+
+message OrderbookReply {
+  bytes serialized_orderbook = 1;
+}
+
+// Get highest bid or lowest ask
+message ClosestOrderRequest {
+
+}
+
+message OrderReply {
+  float order_price = 1;
+  uint64 qty = 2;
+}
+
 
 // Insert Order
 message InsertOrderRequest {
@@ -43,7 +69,7 @@ enum OrderType {
 // Remove Order
 message RemoveOrderRequest {
   float order_price = 1;
-  int64 identifier = 2;
+  uint64 identifier = 2;
 }
 
 message RemoveOrderReply {
