@@ -13,5 +13,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - run: rustup toolchain install stable --profile minimal
+      - run: sudo apt install -y protobuf-compiler
       - name: cargo build test
         run: cargo build
