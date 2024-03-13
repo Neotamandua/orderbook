@@ -2,6 +2,7 @@ use core::fmt;
 use std::collections::VecDeque;
 
 use indexmap::IndexMap;
+use rayon::vec;
 
 use super::identifiable_order::IdentifiableOrder;
 use crate::price::Price;
