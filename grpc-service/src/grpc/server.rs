@@ -29,18 +29,14 @@ pub mod api {
     tonic::include_proto!("api");
 }
 
-use orderbookX::{
+use orderbook_x::{
     orderbook::{IdentifiableOrder, Order, OrderBook},
     traits::matching_engine::{MatchingEngine, OrderType},
 };
 
 use self::api::{
-    BuySideRequest,
-    InsertLimitBuyOrderRequest,
-    InsertLimitSellOrderRequest,
-    InsertMarketBuyOrderRequest,
-    InsertMarketSellOrderRequest,
-    SellSideRequest,
+    BuySideRequest, InsertLimitBuyOrderRequest, InsertLimitSellOrderRequest,
+    InsertMarketBuyOrderRequest, InsertMarketSellOrderRequest, SellSideRequest,
 };
 
 #[derive(Debug, Default)]
@@ -66,11 +62,8 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         {
             let mut orderbook_api = self.write().unwrap();
 
-            // ToDo: create match_and_insert_buy & match_and_insert_sell to remove branching
             // ToDo: provide function to insert limit sell order without matching if services before can make sure no matching happens
-            orderbook_api
-                .orderbook
-                .match_and_insert(order, OrderType::Buy);
+            orderbook_api.orderbook.insert_limit_buy(order);
         }
 
         let reply = InsertOrderReply { success: true };
@@ -115,11 +108,8 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         let order = Order::new(order_price, identifiable_order);
         {
             let mut orderbook_api = self.write().unwrap();
-            // ToDo: create match_and_insert_buy & match_and_insert_sell in orderbookX to remove branching
             // ToDo: provide function to insert limit sell order without matching if services before can make sure no matching happens
-            orderbook_api
-                .orderbook
-                .match_and_insert(order, OrderType::Sell);
+            orderbook_api.orderbook.insert_limit_sell(order);
         }
 
         let reply = InsertOrderReply { success: true };
@@ -146,7 +136,6 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         let order = Order::new(order_price, identifiable_order);
         {
             let mut orderbook_api = self.write().unwrap();
-            // ToDo: create match_and_insert_buy & match_and_insert_sell in orderbookX to remove branching
             orderbook_api.orderbook.market_sell_until(order);
         }
 
@@ -278,7 +267,7 @@ impl Greeter for MyGreeter {
         //println!("Got a request: {:?}", request);
 
         let reply = api::HelloReply {
-            message: format!("Hello {}!", request.into_inner().name).into(),
+            message: format!("Hello {}!", request.into_inner().name),
         };
 
         Ok(Response::new(reply))
@@ -288,9 +277,9 @@ impl Greeter for MyGreeter {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup Orderbook
-    let mut orderbook = OrderBook::default();
+    let orderbook = OrderBook::default();
 
-    let mut orderbook_api = Arc::new(RwLock::new(OrderBookApi { orderbook }));
+    let orderbook_api = Arc::new(RwLock::new(OrderBookApi { orderbook }));
 
     // ToDo: Change Port
     let addr = "[::1]:50051".parse()?;

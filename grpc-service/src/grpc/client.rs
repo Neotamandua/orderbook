@@ -9,18 +9,10 @@
 use std::process::Command;
 
 use api::{
-    command_api_client::CommandApiClient,
-    greeter_client::GreeterClient,
-    query_api_client::QueryApiClient,
-    BuySideRequest,
-    ClosestOrderRequest,
-    HelloRequest,
-    InsertLimitBuyOrderRequest,
-    InsertLimitSellOrderRequest,
-    InsertMarketBuyOrderRequest,
-    InsertMarketSellOrderRequest,
-    InsertOrderReply,
-    SellSideRequest,
+    command_api_client::CommandApiClient, greeter_client::GreeterClient,
+    query_api_client::QueryApiClient, BuySideRequest, ClosestOrderRequest, HelloRequest,
+    InsertLimitBuyOrderRequest, InsertLimitSellOrderRequest, InsertMarketBuyOrderRequest,
+    InsertMarketSellOrderRequest, InsertOrderReply, SellSideRequest,
 };
 use rand::{Rng, RngCore};
 use tonic::{transport::Channel, Response, Status};
@@ -136,22 +128,16 @@ async fn parse_input<R: RngCore>(
 
             Ok(format!("{:?} \n {:?}", asks, bids))
         }
-        _ => {
-            return Err(anyhow::Error::msg("Invalid command"));
-        }
+        _ => Err(anyhow::Error::msg("Invalid command")),
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::api::{
-        command_api_client::CommandApiClient,
-        greeter_client::GreeterClient,
-        query_api_client::QueryApiClient,
-        ClosestOrderRequest,
-        HelloRequest,
-        InsertLimitBuyOrderRequest,
-        InsertLimitSellOrderRequest,
-        InsertMarketBuyOrderRequest,
+        command_api_client::CommandApiClient, greeter_client::GreeterClient,
+        query_api_client::QueryApiClient, ClosestOrderRequest, HelloRequest,
+        InsertLimitBuyOrderRequest, InsertLimitSellOrderRequest, InsertMarketBuyOrderRequest,
         InsertMarketSellOrderRequest,
     };
 
