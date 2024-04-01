@@ -9,6 +9,7 @@ use crate::price::Price;
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Order {
     price: Price,
+    price_level_index: Option<usize>,
     identifiable_order: IdentifiableOrder,
 }
 
@@ -16,12 +17,17 @@ impl Order {
     pub fn new(price: Price, identifiable_order: IdentifiableOrder) -> Self {
         Self {
             price,
+            price_level_index: None,
             identifiable_order,
         }
     }
 
     pub fn get_price(&self) -> &Price {
         &self.price
+    }
+
+    pub fn get_price_level_index(&self) -> Option<usize> {
+        self.price_level_index
     }
 
     pub fn get_order_mut(&mut self) -> &mut IdentifiableOrder {

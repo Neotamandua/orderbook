@@ -5,59 +5,57 @@ use orderbook_x::{
 };
 use rand::Rng;
 
-fn direct_orderbook_bench() {
+fn fill_and_match() {
+    // Prepare prerequisites for order
     let mut rng = rand::thread_rng();
     let mut orderbook = OrderBook::default();
 
+    // fill orderbook
     for i in 1..10000 {
         let price = i as f64;
-        let qty = rng.gen_range(1..=10000);
-        let identifiable_order = IdentifiableOrder::new(1, qty);
+        let qty = 500;
+        let identifiable_order = IdentifiableOrder::new(std::u64::MAX, qty);
         let order = Order::new(price.into(), identifiable_order);
         orderbook.insert_limit_buy(order);
     }
 
-    let identifiable_order = IdentifiableOrder::new(1, 500);
+    // fill orderbook with more buys
     for i in 1..10000 {
         let price = i as f64 + (rng.gen_range(1..=90) as f64 / 100.0);
-        let order = Order::new(price.into(), identifiable_order.clone());
-        orderbook.insert_limit_buy(order);
-    }
-
-    for i in 1..10000 {
-        let price = rng.gen_range(1..=10000) as f64;
-        let qty = rng.gen_range(1..=10000);
-        let identifiable_order = IdentifiableOrder::new(1, qty);
-        let order = Order::new(price.into(), identifiable_order);
-        orderbook.insert_limit_sell(order);
-    }
-
-    for i in 1..10000 {
-        let price = i as f64;
-        let qty = rng.gen_range(1..=10000);
-        let identifiable_order = IdentifiableOrder::new(1, qty);
+        let qty = 500;
+        let identifiable_order = IdentifiableOrder::new(std::u64::MAX, qty);
         let order = Order::new(price.into(), identifiable_order);
         orderbook.insert_limit_buy(order);
     }
 
     for i in 1..10000 {
-        let price = i as f64;
-        let qty = rng.gen_range(1..=10000);
-        let identifiable_order = IdentifiableOrder::new(1, qty);
+        let price = i as f64 + 10000.0;
+        let qty = 500;
+        let identifiable_order = IdentifiableOrder::new(std::u64::MAX, qty);
         let order = Order::new(price.into(), identifiable_order);
         orderbook.insert_limit_sell(order);
     }
 
-    println!(
-        "Amount of open orders: {}",
-        orderbook.get_amount_open_orders()
-    );
+    // Insert market sell order
+    for _ in 1..10000 {
+        let qty = 500;
+        let identifiable_order = IdentifiableOrder::new(std::u64::MAX, qty);
+        let order = Order::new(0.0.into(), identifiable_order);
+
+        orderbook.market_sell(order);
+    }
+
+    // Insert market buy order
+    for _ in 1..10000 {
+        let qty = 500;
+        let identifiable_order = IdentifiableOrder::new(std::u64::MAX, qty);
+        let order = Order::new(0.0.into(), identifiable_order);
+        orderbook.market_buy(order);
+    }
 }
 
-fn bench_insert_match(c: &mut Criterion) {
-    c.bench_function("direct_orderbook_bench", |b| {
-        b.iter(|| direct_orderbook_bench())
-    });
+fn orderbook_bench(c: &mut Criterion) {
+    c.bench_function("fill_and_match", |b| b.iter(|| fill_and_match()));
 }
 
 fn simple_buy_insert(c: &mut Criterion) {
@@ -80,7 +78,7 @@ fn simple_sell_insert(c: &mut Criterion) {
 
 criterion_group!(
     benches,
-    bench_insert_match,
+    orderbook_bench,
     simple_sell_insert,
     simple_buy_insert
 );

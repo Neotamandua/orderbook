@@ -11,6 +11,10 @@ path = "src/grpc/server.rs"
 name = "client"
 path = "src/grpc/client.rs"
 
+[[bench]]
+name = "grpc_service_benchmark"
+harness = false
+
 [dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 tonic = "0.9"
@@ -23,6 +27,7 @@ workspace = true
 
 [dependencies.criterion]
 workspace = true
+features = [ "async_tokio"]
 
 [build-dependencies]
 tonic-build = "0.9"

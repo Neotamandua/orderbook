@@ -11,13 +11,9 @@
 use std::sync::{Arc, RwLock};
 
 use api::{
-    //api_server::{Api, ApiServer},
     command_api_server::{CommandApi, CommandApiServer},
-    greeter_server::{Greeter, GreeterServer},
     query_api_server::{QueryApi, QueryApiServer},
     ClosestOrderRequest,
-    HelloReply,
-    HelloRequest,
     InsertOrderReply,
     OrderReply,
     OrderbookReply,
@@ -35,8 +31,12 @@ use orderbook_x::{
 };
 
 use self::api::{
-    BuySideRequest, InsertLimitBuyOrderRequest, InsertLimitSellOrderRequest,
-    InsertMarketBuyOrderRequest, InsertMarketSellOrderRequest, SellSideRequest,
+    BuySideRequest,
+    InsertLimitBuyOrderRequest,
+    InsertLimitSellOrderRequest,
+    InsertMarketBuyOrderRequest,
+    InsertMarketSellOrderRequest,
+    SellSideRequest,
 };
 
 #[derive(Debug, Default)]
@@ -255,25 +255,6 @@ impl QueryApi for Arc<RwLock<OrderBookApi>> {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct MyGreeter {}
-
-#[tonic::async_trait]
-impl Greeter for MyGreeter {
-    async fn say_hello(
-        &self,
-        request: Request<HelloRequest>,
-    ) -> Result<Response<HelloReply>, Status> {
-        //println!("Got a request: {:?}", request);
-
-        let reply = api::HelloReply {
-            message: format!("Hello {}!", request.into_inner().name),
-        };
-
-        Ok(Response::new(reply))
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup Orderbook
@@ -283,10 +264,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // ToDo: Change Port
     let addr = "[::1]:50051".parse()?;
-    let greeter = MyGreeter::default();
 
     Server::builder()
-        .add_service(GreeterServer::new(greeter))
         .add_service(CommandApiServer::new(orderbook_api.clone()))
         .add_service(QueryApiServer::new(orderbook_api))
         .serve(addr)

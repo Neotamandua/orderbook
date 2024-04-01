@@ -31,6 +31,16 @@ impl OrderBook {
         Self { bids, asks }
     }
 
+    pub fn new_from_state() -> Self {
+        // Create OrderBook from serialized state
+        unimplemented!("Create OrderBook from serialized state")
+    }
+
+    pub fn exit_to_state(&self) {
+        // Serialize OrderBook state and shut down
+        unimplemented!("Serialize OrderBook state")
+    }
+
     pub fn create_test_orderbook() -> Self {
         let mut order_book = OrderBook::default();
 
@@ -149,11 +159,11 @@ impl OrderBook {
     }
 
     /// Order Modification: Remove/Cancel an Order
-    pub fn remove_order(
+    fn remove_order(
         remove_order: Order,
         order_book: &mut IndexMap<Price, VecDeque<IdentifiableOrder>>,
     ) {
-        if let Some(orders_on_price_level) = order_book.get(remove_order.get_price()) {
+        if let Some(orders_on_price_level) = order_book.get_mut(remove_order.get_price()) {
             // If the first statement is wrong, the second never gets executed.
             // If the first statement is correct, the second statement never panics.
             if orders_on_price_level.len() == 1
@@ -162,22 +172,19 @@ impl OrderBook {
                 // If there is only one entry, we can delete the whole indexmap entry
                 order_book.remove_entry(remove_order.get_price());
             } else {
-                //orders_on_price_level.remove(index)
-                // Maybe save index + price as order id
-                // Multiple entries, delete specific Order in FIFO Queue
+                // Decide if we want to add price level index to orders or not
+                //orders_on_price_level.remove(remove_order.get_price_level_index().unwrap());
+                // If not we may do something like:
+                for (i, order) in orders_on_price_level.iter().enumerate() {
+                    if order == remove_order.get_order() {
+                        // Multiple orders on that level, only delete the relevant entry
+                        orders_on_price_level.remove(i);
+                        break;
+                    }
+                }
                 // ToDo: think about memory reallocation and if the order can be yanked somehow first before removing it
                 // ToDo: maybe let matching remove it or some worker in the background during low load times
                 //todo!()
-            }
-        }
-
-        if let Some(orders_on_price_level) = order_book.get_mut(remove_order.get_price()) {
-            for (i, order) in orders_on_price_level.iter().enumerate() {
-                if order == remove_order.get_order() {
-                    // Multiple orders on that level, only delete the relevant entry
-                    orders_on_price_level.remove(i);
-                    break;
-                }
             }
         }
     }
@@ -518,21 +525,6 @@ impl MatchingEngine for OrderBook {
         // All orders are removed including indexmap price levels if they are completely filled
         // The last remaining order in the FIFO queue of the given price level was either exactly equal and was completely filled or only partially filled
         (true, market_sell_qty, accumulator)
-    }
-
-    /// Match and Insert Order into the Orderbook depending on the OrderType
-    /// Unnecessary branching therefore not recommended to use
-    fn match_and_insert(&mut self, order: Order, order_type: OrderType) {
-        // ToDo: Create a market_sell_until/market_buy_until or use the match_orders function
-        match order_type {
-            OrderType::Buy => {
-                //self.match_orders(self.sell_side.order_list, order.identifiable_order.get_qty());
-                Self::insert_limit_buy(self, order)
-            }
-            OrderType::Sell => {
-                Self::insert_limit_sell(self, order);
-            }
-        }
     }
 
     /// Insert Limit Buy Order by matching and inserting the remaining order into the orderbook
