@@ -1,24 +1,30 @@
 [package]
-name = "orderbookX"
+name = "orderbook-x"
 version = "0.1.0"
 edition = "2021"
 
+[[bench]]
+name = "orderbook_benchmark"
+harness = false
+
 [dependencies]
 flamegraph = "0.6"
-criterion = "0.5"
 indexmap = { version = "2.0", features = ["rayon"] }
 rayon = "1.7"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-tracing = "0.1.37"
-tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+tracing = "0.1"
 
 [dev-dependencies]
 rand = "0.8"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [dependencies.proptest]
 workspace = true
 
 [dependencies.test-strategy]
+workspace = true
+
+[dependencies.criterion]
 workspace = true
 
 [profile.release]

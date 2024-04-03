@@ -1,5 +1,3 @@
-use std::collections::VecDeque;
-
 use crate::orderbook::Order;
 
 /// MatchingEngine providing the given order types.
@@ -15,10 +13,13 @@ pub trait MatchingEngine {
     /// Market sell
     fn market_sell(&mut self, sell_order: Order) -> (bool, u64, u64);
 
-    /// Limit Order (Good till Cancel)
+    /// Insert Limit Buy Order (GTC) by matching and inserting the remaining order into the orderbook
     /// A Good till Cancel (GTC) order is a buy or sell order that remains active until it is either filled or manually canceled by the trader.
     /// Unlike immediate execution orders, GTC orders can stay in the market for an extended period until they are executed or revoked by the trader.
-    fn match_and_insert(&mut self, order: Order, order_type: OrderType);
+    fn insert_limit_buy(&mut self, order: Order);
+
+    /// Insert Limit Sell Order (GTC) by matching and inserting the remaining order into the orderbook
+    fn insert_limit_sell(&mut self, order: Order);
 
     /// Limit or Cancel
     fn limit_or_cancel_insert(&mut self, order: Order, order_type: OrderType);

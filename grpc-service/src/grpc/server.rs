@@ -11,13 +11,9 @@
 use std::sync::{Arc, RwLock};
 
 use api::{
-    //api_server::{Api, ApiServer},
     command_api_server::{CommandApi, CommandApiServer},
-    greeter_server::{Greeter, GreeterServer},
     query_api_server::{QueryApi, QueryApiServer},
     ClosestOrderRequest,
-    HelloReply,
-    HelloRequest,
     InsertOrderReply,
     OrderReply,
     OrderbookReply,
@@ -29,7 +25,7 @@ pub mod api {
     tonic::include_proto!("api");
 }
 
-use orderbookX::{
+use orderbook_x::{
     orderbook::{IdentifiableOrder, Order, OrderBook},
     traits::matching_engine::{MatchingEngine, OrderType},
 };
@@ -66,11 +62,8 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         {
             let mut orderbook_api = self.write().unwrap();
 
-            // ToDo: create match_and_insert_buy & match_and_insert_sell to remove branching
             // ToDo: provide function to insert limit sell order without matching if services before can make sure no matching happens
-            orderbook_api
-                .orderbook
-                .match_and_insert(order, OrderType::Buy);
+            orderbook_api.orderbook.insert_limit_buy(order);
         }
 
         let reply = InsertOrderReply { success: true };
@@ -115,11 +108,8 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         let order = Order::new(order_price, identifiable_order);
         {
             let mut orderbook_api = self.write().unwrap();
-            // ToDo: create match_and_insert_buy & match_and_insert_sell in orderbookX to remove branching
             // ToDo: provide function to insert limit sell order without matching if services before can make sure no matching happens
-            orderbook_api
-                .orderbook
-                .match_and_insert(order, OrderType::Sell);
+            orderbook_api.orderbook.insert_limit_sell(order);
         }
 
         let reply = InsertOrderReply { success: true };
@@ -146,7 +136,6 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         let order = Order::new(order_price, identifiable_order);
         {
             let mut orderbook_api = self.write().unwrap();
-            // ToDo: create match_and_insert_buy & match_and_insert_sell in orderbookX to remove branching
             orderbook_api.orderbook.market_sell_until(order);
         }
 
@@ -266,38 +255,17 @@ impl QueryApi for Arc<RwLock<OrderBookApi>> {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct MyGreeter {}
-
-#[tonic::async_trait]
-impl Greeter for MyGreeter {
-    async fn say_hello(
-        &self,
-        request: Request<HelloRequest>,
-    ) -> Result<Response<HelloReply>, Status> {
-        //println!("Got a request: {:?}", request);
-
-        let reply = api::HelloReply {
-            message: format!("Hello {}!", request.into_inner().name).into(),
-        };
-
-        Ok(Response::new(reply))
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Setup Orderbook
-    let mut orderbook = OrderBook::default();
+    let orderbook = OrderBook::default();
 
-    let mut orderbook_api = Arc::new(RwLock::new(OrderBookApi { orderbook }));
+    let orderbook_api = Arc::new(RwLock::new(OrderBookApi { orderbook }));
 
     // ToDo: Change Port
     let addr = "[::1]:50051".parse()?;
-    let greeter = MyGreeter::default();
 
     Server::builder()
-        .add_service(GreeterServer::new(greeter))
         .add_service(CommandApiServer::new(orderbook_api.clone()))
         .add_service(QueryApiServer::new(orderbook_api))
         .serve(addr)

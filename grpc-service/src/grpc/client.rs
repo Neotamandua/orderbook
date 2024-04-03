@@ -6,15 +6,11 @@
 //!
 //! This client is a simple CLI that allows the user to interact with the orderbook service
 
-use std::process::Command;
-
 use api::{
     command_api_client::CommandApiClient,
-    greeter_client::GreeterClient,
     query_api_client::QueryApiClient,
     BuySideRequest,
     ClosestOrderRequest,
-    HelloRequest,
     InsertLimitBuyOrderRequest,
     InsertLimitSellOrderRequest,
     InsertMarketBuyOrderRequest,
@@ -33,15 +29,8 @@ pub mod api {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut client = GreeterClient::connect("http://[::1]:50051").await?;
     let mut command_orderbook_client = CommandApiClient::connect("http://[::1]:50051").await?;
     let mut query_orderbook_client = QueryApiClient::connect("http://[::1]:50051").await?;
-
-    let request = tonic::Request::new(HelloRequest {
-        name: "Tonic".into(),
-    });
-
-    let response = client.say_hello(request).await?;
 
     // Prepare prerequisites for order
     let mut rng = rand::thread_rng();
@@ -126,6 +115,9 @@ async fn parse_input<R: RngCore>(
                 .await;
             Ok(format!("{:?}", x))
         }
+        "order close" => {
+            todo!("Close order unimplemented on client side");
+        }
         "order ls" => {
             let asks = query_orderbook_client
                 .get_asks(tonic::Request::new(SellSideRequest { depth: 10 }))
@@ -136,19 +128,16 @@ async fn parse_input<R: RngCore>(
 
             Ok(format!("{:?} \n {:?}", asks, bids))
         }
-        _ => {
-            return Err(anyhow::Error::msg("Invalid command"));
-        }
+        _ => Err(anyhow::Error::msg("Invalid command")),
     }
 }
 
+#[cfg(test)]
 mod tests {
     use super::api::{
         command_api_client::CommandApiClient,
-        greeter_client::GreeterClient,
         query_api_client::QueryApiClient,
         ClosestOrderRequest,
-        HelloRequest,
         InsertLimitBuyOrderRequest,
         InsertLimitSellOrderRequest,
         InsertMarketBuyOrderRequest,
@@ -157,17 +146,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_client() -> Result<(), Box<dyn std::error::Error>> {
-        let mut client = GreeterClient::connect("http://[::1]:50051").await?;
         let mut command_orderbook_client = CommandApiClient::connect("http://[::1]:50051").await?;
         let mut query_orderbook_client = QueryApiClient::connect("http://[::1]:50051").await?;
 
-        let request = tonic::Request::new(HelloRequest {
-            name: "Tonic".into(),
-        });
-
-        let response = client.say_hello(request).await?;
-
-        println!("RESPONSE={:?}", response);
         for i in 0..100 {
             // Buy Order
             let request = tonic::Request::new(InsertLimitBuyOrderRequest {

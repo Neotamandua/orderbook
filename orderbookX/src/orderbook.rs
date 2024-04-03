@@ -6,7 +6,7 @@ use std::collections::VecDeque;
 pub use identifiable_order::IdentifiableOrder;
 use indexmap::IndexMap;
 pub use orders::Order;
-use tracing::debug;
+use tracing::{debug, trace};
 
 use self::orders::OrderList;
 use crate::{
@@ -27,12 +27,37 @@ impl fmt::Display for OrderBook {
 }
 
 impl OrderBook {
-    fn new(bids: OrderList, asks: OrderList) -> Self {
+    pub fn new(bids: OrderList, asks: OrderList) -> Self {
         Self { bids, asks }
+    }
+
+    pub fn new_from_state() -> Self {
+        // Create OrderBook from serialized state
+        unimplemented!("Create OrderBook from serialized state")
+    }
+
+    pub fn exit_to_state(&self) {
+        // Serialize OrderBook state and shut down
+        unimplemented!("Serialize OrderBook state")
+    }
+
+    pub fn create_test_orderbook() -> Self {
+        let mut order_book = OrderBook::default();
+
+        order_book.insert_buy_order(Order::new(Price::new(1, 0), IdentifiableOrder::new(1, 50)));
+        order_book.insert_buy_order(Order::new(Price::new(2, 0), IdentifiableOrder::new(2, 50)));
+        order_book.insert_sell_order(Order::new(Price::new(3, 0), IdentifiableOrder::new(3, 50)));
+        order_book
     }
 }
 
+// Non mutating functions
 impl OrderBook {
+    /// Get the amount of open limit orders in the orderbook
+    pub fn get_amount_open_orders(&self) -> usize {
+        self.bids.get_amount_open_orders() + self.asks.get_amount_open_orders()
+    }
+
     /// Returns current market price
     /// Current market price is defined as the highest bid price currently in the orderbook.
     ///
@@ -53,7 +78,8 @@ impl OrderBook {
         }
     }
 
-    fn highest_bid(&self) -> Option<(&Price, &IdentifiableOrder)> {
+    // Get the highest bid price from the orderbook
+    pub fn highest_bid(&self) -> Option<(&Price, &IdentifiableOrder)> {
         // get highest bid from buy side
         if let Some((price, orders)) = self.bids.order_list.last() {
             // we can unwrap here as the first last call is already ensuring to have an element here?
@@ -63,7 +89,8 @@ impl OrderBook {
         }
     }
 
-    fn lowest_ask(&self) -> Option<(&Price, &IdentifiableOrder)> {
+    // Get the lowest ask price from the orderbook
+    pub fn lowest_ask(&self) -> Option<(&Price, &IdentifiableOrder)> {
         // get lowest ask price from sell side
         if let Some((price, orders)) = self.asks.order_list.first() {
             Some((price, orders.front().unwrap()))
@@ -81,7 +108,10 @@ impl OrderBook {
         // get lowest asks from sell side
         self.asks.order_list.first()
     }
+}
 
+// Mutating functions
+impl OrderBook {
     fn highest_bids_mut(&mut self) -> Option<(&Price, &mut VecDeque<IdentifiableOrder>)> {
         // get highest bidders from buy side
         self.bids.order_list.last_mut()
@@ -92,15 +122,15 @@ impl OrderBook {
         self.asks.order_list.first_mut()
     }
 
-    /// Insert Limit Buy Order
-    pub fn insert_buy_order(&mut self, insert_order: Order) {
+    /// Insert Limit Buy Order **without** matching
+    pub(crate) fn insert_buy_order(&mut self, insert_order: Order) {
         let order_list = &mut self.bids;
         // Insert Limit Order
         order_list.insert_order(insert_order)
     }
 
-    /// Insert Limit Sell Order
-    pub fn insert_sell_order(&mut self, insert_order: Order) {
+    /// Insert Limit Sell Order **without** matching
+    pub(crate) fn insert_sell_order(&mut self, insert_order: Order) {
         let order_list = &mut self.asks;
         // Insert Limit Order
         order_list.insert_order(insert_order)
@@ -129,11 +159,11 @@ impl OrderBook {
     }
 
     /// Order Modification: Remove/Cancel an Order
-    pub fn remove_order(
+    fn remove_order(
         remove_order: Order,
         order_book: &mut IndexMap<Price, VecDeque<IdentifiableOrder>>,
     ) {
-        if let Some(orders_on_price_level) = order_book.get(remove_order.get_price()) {
+        if let Some(orders_on_price_level) = order_book.get_mut(remove_order.get_price()) {
             // If the first statement is wrong, the second never gets executed.
             // If the first statement is correct, the second statement never panics.
             if orders_on_price_level.len() == 1
@@ -142,22 +172,19 @@ impl OrderBook {
                 // If there is only one entry, we can delete the whole indexmap entry
                 order_book.remove_entry(remove_order.get_price());
             } else {
-                //orders_on_price_level.remove(index)
-                // Maybe save index + price as order id
-                // Multiple entries, delete specific Order in FIFO Queue
+                // Decide if we want to add price level index to orders or not
+                //orders_on_price_level.remove(remove_order.get_price_level_index().unwrap());
+                // If not we may do something like:
+                for (i, order) in orders_on_price_level.iter().enumerate() {
+                    if order == remove_order.get_order() {
+                        // Multiple orders on that level, only delete the relevant entry
+                        orders_on_price_level.remove(i);
+                        break;
+                    }
+                }
                 // ToDo: think about memory reallocation and if the order can be yanked somehow first before removing it
                 // ToDo: maybe let matching remove it or some worker in the background during low load times
                 //todo!()
-            }
-        }
-
-        if let Some(orders_on_price_level) = order_book.get_mut(remove_order.get_price()) {
-            for (i, order) in orders_on_price_level.iter().enumerate() {
-                if order == remove_order.get_order() {
-                    // Multiple orders on that level, only delete the relevant entry
-                    orders_on_price_level.remove(i);
-                    break;
-                }
             }
         }
     }
@@ -169,13 +196,12 @@ impl MatchingEngine for OrderBook {
         let market_buy_qty = buy_order.get_order().get_qty();
 
         // Get first sell orders to match
-        println!("{:?}", self.lowest_asks_mut());
         let Some(mut price_level) = self.lowest_asks_mut() else {
             // Orderbook is empty, nothing to match, order stays the same
             return (true, market_buy_qty, 0, buy_order);
         };
         // Market price level right now
-        let mut market_price = price_level.0.clone();
+        let mut market_price = *price_level.0;
 
         // Check until
         if buy_order.get_price() < &market_price {
@@ -186,7 +212,7 @@ impl MatchingEngine for OrderBook {
         // Orders at price level
         let mut orders = price_level.1;
 
-        println!("Market buy order quantity: {}", market_buy_qty);
+        debug!("Market buy order quantity: {}", market_buy_qty);
 
         // Accumulates the qty until it reaches the orders amount or reaches buy_order price
         let mut accumulator: u64 = 0;
@@ -206,19 +232,19 @@ impl MatchingEngine for OrderBook {
                         break;
                     }
                     // Fire Event
-                    println!("Order to remove: {}", order_to_remove);
+                    trace!("Order to remove: {}", order_to_remove);
                 } else {
                     // We need to reduce matched order in the orderbook (partial fill)
                     let order_to_reduce = orders.front_mut().unwrap();
                     // remaining unfilled amount on last maker limit order
                     let remainder = accumulator - market_buy_qty;
                     // Only reduce FIFO Queue Orders
-                    println!("Order to reduce: {}", order_to_reduce);
+                    debug!("Order to reduce: {}", order_to_reduce);
                     order_to_reduce.set_qty(remainder);
                     // Set accumulator to final filled amount
                     accumulator -= remainder;
                     // We can break since we are finished here
-                    println!("Unfilled amount of last limit sell order: {}", remainder);
+                    trace!("Unfilled amount of last limit sell order: {}", remainder);
                     break;
                 }
                 // Go to next element on same price level
@@ -226,13 +252,13 @@ impl MatchingEngine for OrderBook {
                 // No orders left at the given price, go to a higher price level
                 // 1. Remove price level from orderbook
                 let _ = self.remove_ask_price_level(&market_price).unwrap();
-                println!("Removed Price Level: {}", market_price);
+                debug!("Removed Price Level: {}", market_price);
                 // 2. Update to next price level
                 if let Some(next_matches) = self.lowest_asks_mut() {
                     // Update Matches
                     price_level = next_matches;
                     // Update Market Price
-                    market_price = price_level.0.clone();
+                    market_price = *price_level.0;
                     // Update Orders
                     orders = price_level.1;
                 } else {
@@ -257,14 +283,13 @@ impl MatchingEngine for OrderBook {
     fn market_sell_until(&mut self, mut sell_order: Order) -> (bool, u64, u64, Order) {
         let market_sell_qty = sell_order.get_order().get_qty();
 
-        // Get first sell orders to match
-        println!("{:?}", self.highest_bids_mut());
+        // Get first buy orders to match
         let Some(mut price_level) = self.highest_bids_mut() else {
             // Orderbook is empty, nothing to match, order stays the same
             return (true, market_sell_qty, 0, sell_order);
         };
         // Market price level right now
-        let mut market_price = price_level.0.clone();
+        let mut market_price = *price_level.0;
 
         // Check until
         if sell_order.get_price() > &market_price {
@@ -274,7 +299,7 @@ impl MatchingEngine for OrderBook {
 
         let mut orders = price_level.1;
 
-        println!("Market buy order quantity: {}", market_sell_qty);
+        debug!("Market buy order quantity: {}", market_sell_qty);
 
         // Accumulates the qty until it reaches the orders amount or reaches sell_order price
         let mut accumulator: u64 = 0;
@@ -293,30 +318,30 @@ impl MatchingEngine for OrderBook {
                         break;
                     }
                     // Fire Event
-                    println!("Order to remove: {}", order_to_remove);
+                    trace!("Order to remove: {}", order_to_remove);
                 } else {
                     // We need to reduce matched order in the orderbook (partial fill)
                     let order_to_reduce = orders.front_mut().unwrap();
                     // remaining unfilled amount on last maker limit order
                     let remainder = accumulator - market_sell_qty;
                     // Only reduce FIFO Queue Orders
-                    println!("Order to reduce: {}", order_to_reduce);
+                    debug!("Order to reduce: {}", order_to_reduce);
                     order_to_reduce.set_qty(remainder);
                     // Set accumulator to final filled amount
                     accumulator -= remainder;
-                    println!("Unfilled amount of last limit sell order: {}", remainder);
+                    trace!("Unfilled amount of last limit sell order: {}", remainder);
                     break;
                 }
                 // Go to next element on same price level
             } else {
                 // No orders left at the given price, go to a lower price level
                 let _ = self.remove_bid_price_level(&market_price).unwrap();
-                println!("Removed Price Level: {}", market_price);
+                debug!("Removed Price Level: {}", market_price);
 
                 if let Some(next_matches) = self.highest_bids_mut() {
                     price_level = next_matches;
 
-                    market_price = price_level.0.clone();
+                    market_price = *price_level.0;
 
                     orders = price_level.1;
                 } else {
@@ -341,17 +366,16 @@ impl MatchingEngine for OrderBook {
         let market_buy_qty = buy_order.get_order().get_qty();
 
         // Get first sell orders to match
-        println!("{:?}", self.lowest_asks_mut());
         let Some(mut price_level) = self.lowest_asks_mut() else {
             // Orderbook is empty
             return (false, market_buy_qty, 0);
         };
         // Market price level right now
-        let mut market_price = price_level.0.clone();
+        let mut market_price = *price_level.0;
         // Orders at price level
         let mut orders = price_level.1;
 
-        println!("Market buy order quantity: {}", market_buy_qty);
+        debug!("Market buy order quantity: {}", market_buy_qty);
 
         // Accumulates the qty until it reaches the orders amount
         let mut accumulator: u64 = 0;
@@ -371,19 +395,19 @@ impl MatchingEngine for OrderBook {
                         break;
                     }
                     // Fire Event
-                    println!("Order to remove: {}", order_to_remove);
+                    trace!("Order to remove: {}", order_to_remove);
                 } else {
                     // We need to reduce matched order in the orderbook (partial fill)
                     let order_to_reduce = orders.front_mut().unwrap();
                     // remaining unfilled amount on last maker limit order
                     let remainder = accumulator - market_buy_qty;
                     // Only reduce FIFO Queue Orders
-                    println!("Order to reduce: {}", order_to_reduce);
+                    debug!("Order to reduce: {}", order_to_reduce);
                     order_to_reduce.set_qty(remainder);
                     // Set accumulator to final filled amount
                     accumulator -= remainder;
                     // We can break since we are finished here
-                    println!("Unfilled amount of last limit sell order: {}", remainder);
+                    trace!("Unfilled amount of last limit sell order: {}", remainder);
                     break;
                 }
                 // Go to next element on same price level
@@ -391,13 +415,13 @@ impl MatchingEngine for OrderBook {
                 // No orders left at the given price, go to a higher price level
                 // 1. Remove price level from orderbook
                 let _ = self.remove_ask_price_level(&market_price).unwrap();
-                println!("Removed Price Level: {}", market_price);
+                debug!("Removed Price Level: {}", market_price);
                 // 2. Update to next price level
                 if let Some(next_matches) = self.lowest_asks_mut() {
                     // Update Matches
                     price_level = next_matches;
                     // Update Market Price
-                    market_price = price_level.0.clone();
+                    market_price = *price_level.0;
                     // Update Orders
                     orders = price_level.1;
                 } else {
@@ -432,7 +456,7 @@ impl MatchingEngine for OrderBook {
         };
         debug!("Price level: {:?}", price_level);
         // Market price level right now
-        let mut market_price = price_level.0.clone();
+        let mut market_price = *price_level.0;
         // Orders at price level
         let mut orders = price_level.1;
 
@@ -456,7 +480,7 @@ impl MatchingEngine for OrderBook {
                         break;
                     }
                     // Fire Event
-                    debug!("Order to remove: {}", order_to_remove);
+                    trace!("Order to remove: {}", order_to_remove);
                 } else {
                     // We need to reduce matched order in the orderbook (partial fill)
                     let order_to_reduce = orders.front_mut().unwrap();
@@ -468,7 +492,7 @@ impl MatchingEngine for OrderBook {
                     // Set accumulator to final filled amount
                     accumulator -= remainder;
                     // We can break since we are finished here
-                    debug!("Unfilled amount of last limit buy order: {}", remainder);
+                    trace!("Unfilled amount of last limit buy order: {}", remainder);
                     break;
                 }
                 // Go to next element on same price level
@@ -484,7 +508,7 @@ impl MatchingEngine for OrderBook {
                     // Update Matches
                     price_level = next_matches;
                     // Update Market Price
-                    market_price = price_level.0.clone();
+                    market_price = *price_level.0;
                     // Update Orders
                     orders = price_level.1;
                 } else {
@@ -503,22 +527,19 @@ impl MatchingEngine for OrderBook {
         (true, market_sell_qty, accumulator)
     }
 
-    fn match_and_insert(&mut self, order: Order, order_type: OrderType) {
-        // ToDo: Create a market_sell_until/market_buy_until or use the match_orders function
-        match order_type {
-            OrderType::Buy => {
-                //self.match_orders(self.sell_side.order_list, order.identifiable_order.get_qty());
-                let (result, qty, filled, order) = self.market_buy_until(order);
-                if order.get_order().get_qty() > 0 {
-                    self.insert_buy_order(order);
-                }
-            }
-            OrderType::Sell => {
-                let (result, qty, filled, order) = self.market_sell_until(order);
-                if order.get_order().get_qty() > 0 {
-                    self.insert_sell_order(order);
-                }
-            }
+    /// Insert Limit Buy Order by matching and inserting the remaining order into the orderbook
+    fn insert_limit_buy(&mut self, order: Order) {
+        let (result, qty, filled, order) = self.market_buy_until(order);
+        if order.get_order().get_qty() > 0 {
+            self.insert_buy_order(order);
+        }
+    }
+
+    /// Insert Limit Sell Order by matching and inserting the remaining order into the orderbook
+    fn insert_limit_sell(&mut self, order: Order) {
+        let (result, qty, filled, order) = self.market_sell_until(order);
+        if order.get_order().get_qty() > 0 {
+            self.insert_sell_order(order);
         }
     }
 
@@ -709,9 +730,9 @@ mod tests {
         let mut order_book = OrderBook::new(bids, OrderList::default());
 
         for order in orders {
-            order_book.match_and_insert(order, OrderType::Sell);
+            order_book.insert_limit_sell(order);
         }
-        println!("{}", order_book);
+        debug!("{}", order_book);
     }
 
     /*

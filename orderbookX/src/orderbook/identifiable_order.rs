@@ -3,7 +3,6 @@ use core::fmt;
 // ToDo: Multithread Read/Write lock this
 #[derive(Default, Eq, PartialEq, PartialOrd, Debug, Clone)]
 pub struct IdentifiableOrder {
-    // This shouldn't be an i64 if it's used for production
     id: u64,
     qty: u64,
 }

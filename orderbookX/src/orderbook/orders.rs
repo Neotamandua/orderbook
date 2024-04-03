@@ -2,7 +2,6 @@ use core::fmt;
 use std::collections::VecDeque;
 
 use indexmap::IndexMap;
-use rayon::vec;
 
 use super::identifiable_order::IdentifiableOrder;
 use crate::price::Price;
@@ -10,6 +9,7 @@ use crate::price::Price;
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Order {
     price: Price,
+    price_level_index: Option<usize>,
     identifiable_order: IdentifiableOrder,
 }
 
@@ -17,12 +17,17 @@ impl Order {
     pub fn new(price: Price, identifiable_order: IdentifiableOrder) -> Self {
         Self {
             price,
+            price_level_index: None,
             identifiable_order,
         }
     }
 
     pub fn get_price(&self) -> &Price {
         &self.price
+    }
+
+    pub fn get_price_level_index(&self) -> Option<usize> {
+        self.price_level_index
     }
 
     pub fn get_order_mut(&mut self) -> &mut IdentifiableOrder {
@@ -46,9 +51,21 @@ pub struct OrderList {
     pub order_list: Orders,
 }
 
+// Non mutating functions
+impl OrderList {
+    pub(crate) fn len(&self) -> usize {
+        self.order_list.len()
+    }
+
+    pub(crate) fn get_amount_open_orders(&self) -> usize {
+        self.order_list.values().map(|x| x.len()).sum()
+    }
+}
+
+// Mutating functions
 impl OrderList {
     /// Inserts a limit order at the right price and fifo queue position
-    pub fn insert_order(&mut self, order: Order) {
+    pub(crate) fn insert_order(&mut self, order: Order) {
         // Check if Price level exists
         if let Some(orders_on_price_level) = self.order_list.get_mut(&order.price) {
             // Add order to existing price level FIFO Queue

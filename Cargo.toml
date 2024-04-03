@@ -6,6 +6,7 @@ members = [
 ]
 
 [workspace.dependencies]
-orderbookX = { path = "orderbookX" }
+orderbook-x = { path = "orderbookX" }
 proptest = "1.2.0"
 test-strategy = "0.3.1"
+criterion = "0.5"
