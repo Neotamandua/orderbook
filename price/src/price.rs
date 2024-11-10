@@ -1,3 +1,5 @@
+//! Canonical tick-based price representation.
+
 use core::fmt;
 
 /// The number of supported price ticks in one whole unit.
