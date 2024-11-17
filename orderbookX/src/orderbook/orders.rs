@@ -2,9 +2,70 @@ use core::fmt;
 use std::collections::VecDeque;
 
 use indexmap::IndexMap;
+use price::Price;
+use serde::{Deserialize, Serialize};
 
 use super::identifiable_order::IdentifiableOrder;
-use crate::price::Price;
+
+/// An immutable aggregate snapshot of one order-book price level.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PriceLevel {
+    price: Price,
+    qty: u64,
+}
+
+impl PriceLevel {
+    pub(super) fn from_orders(
+        price: Price,
+        orders: &VecDeque<IdentifiableOrder>,
+    ) -> Result<Self, QuantityOverflow> {
+        let qty = orders.iter().try_fold(0_u64, |total, order| {
+            total
+                .checked_add(order.get_qty())
+                .ok_or(QuantityOverflow { price })
+        })?;
+
+        Ok(Self { price, qty })
+    }
+
+    /// Returns the canonical price for this level.
+    #[must_use]
+    pub const fn price(self) -> Price {
+        self.price
+    }
+
+    /// Returns the aggregate open quantity at this level.
+    #[must_use]
+    pub const fn qty(self) -> u64 {
+        self.qty
+    }
+}
+
+/// The aggregate quantity at a price level exceeded the supported `u64` range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct QuantityOverflow {
+    price: Price,
+}
+
+impl QuantityOverflow {
+    /// Returns the price whose aggregate quantity overflowed.
+    #[must_use]
+    pub const fn price(self) -> Price {
+        self.price
+    }
+}
+
+impl fmt::Display for QuantityOverflow {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "aggregate order quantity at price {} exceeds the supported range",
+            self.price
+        )
+    }
+}
+
+impl std::error::Error for QuantityOverflow {}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Order {
@@ -46,7 +107,7 @@ type Orders = IndexMap<Price, VecDeque<IdentifiableOrder>>;
 /// It uses an IndexMap data structure [Orders] where the keys are canonical tick prices and the values are vectors (Vec) of orders (IdentifiableOrder) at that price.
 /// The vector is a time priority list for orders at the given price, where the first element is the first order to be matched.
 /// Together with the price as a key in the IndexMap, two OrderList result in a price/time priority orderbook
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct OrderList {
     pub order_list: Orders,
 }
@@ -89,17 +150,10 @@ impl OrderList {
 
 impl fmt::Display for OrderList {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut vector: Vec<String> = vec![];
-        for price_level in self.order_list.clone().iter_mut() {
-            let mut size_on_price_level: u64 = 0;
-            for element in price_level.1.make_contiguous().iter() {
-                size_on_price_level += element.get_qty();
-            }
-            vector.push(format!(
-                "{}, {}",
-                price_level.0.clone(),
-                size_on_price_level
-            ))
+        let mut vector: Vec<String> = Vec::with_capacity(self.order_list.len());
+        for (price, orders) in &self.order_list {
+            let level = PriceLevel::from_orders(*price, orders).map_err(|_| fmt::Error)?;
+            vector.push(format!("{}, {}", level.price(), level.qty()));
         }
         write!(f, "{:#?}", vector)
     }

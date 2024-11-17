@@ -1,7 +1,9 @@
 use core::fmt;
 
+use serde::{Deserialize, Serialize};
+
 // ToDo: Multithread Read/Write lock this
-#[derive(Default, Eq, PartialEq, PartialOrd, Debug, Clone)]
+#[derive(Default, Eq, PartialEq, PartialOrd, Debug, Clone, Serialize, Deserialize)]
 pub struct IdentifiableOrder {
     id: u64,
     qty: u64,

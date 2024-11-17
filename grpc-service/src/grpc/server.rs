@@ -23,9 +23,9 @@ pub mod api {
 
 use orderbook_x::{
     orderbook::{IdentifiableOrder, Order, OrderBook},
-    price::Price,
     traits::matching_engine::MatchingEngine,
 };
+use price::Price;
 
 use self::api::{
     BuySideRequest, InsertLimitBuyOrderRequest, InsertLimitSellOrderRequest,

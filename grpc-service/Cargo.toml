@@ -26,6 +26,9 @@ inquire = "0.7.5"
 [dependencies.orderbook-x]
 workspace = true
 
+[dependencies.price]
+workspace = true
+
 [dependencies.criterion]
 workspace = true
 features = [ "async_tokio"]

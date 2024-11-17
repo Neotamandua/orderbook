@@ -1,3 +1,10 @@
+//! OrderBook for the Matching Engine
+//!
+//! The OrderBook is the central data structure of the matching engine.
+//! All matching engine logic is residing in the OrderBook.
+//!
+//! The OrderBook is responsible for inserting, removing, matching orders and executing trades.
+
 mod identifiable_order;
 mod orders;
 use core::fmt;
@@ -5,15 +12,18 @@ use std::collections::VecDeque;
 
 pub use identifiable_order::IdentifiableOrder;
 use indexmap::IndexMap;
-pub use orders::Order;
+pub use orders::{Order, PriceLevel, QuantityOverflow};
+use price::Price;
 use tracing::{debug, trace};
 
-use self::orders::OrderList;
 use crate::{
-    price::Price,
+    orderbook::orders::OrderList,
     traits::matching_engine::{MatchingEngine, OrderType},
 };
 
+/// OrderBook struct representing the orderbook
+///
+/// The OrderBook contains two OrderLists, one for the buy side and one for the sell side.
 #[derive(Default, Debug)]
 pub struct OrderBook {
     bids: OrderList,
@@ -27,20 +37,23 @@ impl fmt::Display for OrderBook {
 }
 
 impl OrderBook {
+    /// Create a new OrderBook
     pub fn new(bids: OrderList, asks: OrderList) -> Self {
         Self { bids, asks }
     }
 
+    /// Create an OrderBook from serialized state
     pub fn new_from_state() -> Self {
         // Create OrderBook from serialized state
         unimplemented!("Create OrderBook from serialized state")
     }
 
+    /// Serialize OrderBook state and shut down
     pub fn exit_to_state(&self) {
         // Serialize OrderBook state and shut down
         unimplemented!("Serialize OrderBook state")
     }
-
+    /// Creates a small deterministic order book for examples and tests.
     pub fn create_test_orderbook() -> Self {
         let mut order_book = OrderBook::default();
 
@@ -60,18 +73,24 @@ impl OrderBook {
     }
 }
 
-// Non mutating functions
+/// Non mutating functions used for polling
+/// Should be used mainly for test & debugging purposes
 impl OrderBook {
-    /// Get the amount of open limit orders in the orderbook
+    /// Get the amount of open limit orders in the orderbook.
     pub fn get_amount_open_orders(&self) -> usize {
         self.bids.get_amount_open_orders() + self.asks.get_amount_open_orders()
     }
 
-    /// Returns current market price
+    /// Returns current market price.
+    /// Note: Should be used for test & debugging purposes
+    ///
     /// Current market price is defined as the highest bid price currently in the orderbook.
     ///
-    /// If not bids exist, then the price is the lowest ask price in the orderbook.
-    pub fn get_price(&self) -> Option<&Price> {
+    /// If no bids exist, then the price is the lowest ask price in the orderbook.
+    ///
+    /// It is **not** defined as the last matched trade price.
+    /// Users should receive this based on the last matched trade through events.
+    fn get_price(&self) -> Option<&Price> {
         if let Some(price) = self
             .bids
             .order_list
@@ -87,39 +106,81 @@ impl OrderBook {
         }
     }
 
-    // Get the highest bid price from the orderbook
-    pub fn highest_bid(&self) -> Option<(&Price, &IdentifiableOrder)> {
+    /// Get the highest bid price from the orderbook
+    /// Note: Should be used for test & debugging purposes
+    pub fn highest_bid(&self) -> Option<&Price> {
         // get highest bid from buy side
-        if let Some((price, orders)) = self.bids.order_list.last() {
-            // we can unwrap here as the first last call is already ensuring to have an element here?
-            Some((price, orders.front().unwrap()))
+        if let Some((price, _)) = self.bids.order_list.last() {
+            Some(price)
         } else {
             None
         }
     }
 
-    // Get the lowest ask price from the orderbook
-    pub fn lowest_ask(&self) -> Option<(&Price, &IdentifiableOrder)> {
+    /// Get the lowest ask price from the orderbook
+    /// Note: Should be used for test & debugging purposes
+    pub fn lowest_ask(&self) -> Option<&Price> {
         // get lowest ask price from sell side
-        if let Some((price, orders)) = self.asks.order_list.first() {
-            Some((price, orders.front().unwrap()))
+        if let Some((price, _)) = self.asks.order_list.first() {
+            Some(price)
         } else {
             None
         }
     }
 
+    /// Get the highest bid price and all orders at that price level
     pub fn highest_bids(&self) -> Option<(&Price, &VecDeque<IdentifiableOrder>)> {
         // get highest bidders from buy side
         self.bids.order_list.last()
     }
 
+    /// Get the lowest ask price and all orders at that price level
     pub fn lowest_asks(&self) -> Option<(&Price, &VecDeque<IdentifiableOrder>)> {
         // get lowest asks from sell side
         self.asks.order_list.first()
     }
+
+    /// Note: Should be used for test & debugging purposes
+    /// Getting bids and asks should be handled through some event system/websocket
+    /// that sends out information on changes, matches etc., and not through polling
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QuantityOverflow`] if the aggregate quantity at a selected
+    /// price level exceeds `u64`.
+    pub fn asks(&self, depth: usize) -> Result<Vec<PriceLevel>, QuantityOverflow> {
+        self.asks
+            .order_list
+            .iter()
+            .take(depth)
+            .map(|(price, orders)| PriceLevel::from_orders(*price, orders))
+            .collect()
+    }
+
+    /// Note: Should be used for test & debugging purposes
+    /// Getting bids and asks should be handled through some event system/websocket
+    /// that sends out information on changes, matches etc., and not through polling
+    ///
+    /// Returns up to `depth` price levels closest to the market while preserving
+    /// the order book's ascending internal price order.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`QuantityOverflow`] if the aggregate quantity at a selected
+    /// price level exceeds `u64`.
+    pub fn bids(&self, depth: usize) -> Result<Vec<PriceLevel>, QuantityOverflow> {
+        self.bids
+            .order_list
+            .iter()
+            .rev()
+            .take(depth)
+            .rev()
+            .map(|(price, orders)| PriceLevel::from_orders(*price, orders))
+            .collect()
+    }
 }
 
-// Mutating functions
+/// Mutating functions
 impl OrderBook {
     fn highest_bids_mut(&mut self) -> Option<(&Price, &mut VecDeque<IdentifiableOrder>)> {
         // get highest bidders from buy side
@@ -132,25 +193,29 @@ impl OrderBook {
     }
 
     /// Insert Limit Buy Order **without** matching
-    pub(crate) fn insert_buy_order(&mut self, insert_order: Order) {
+    fn insert_buy_order(&mut self, insert_order: Order) {
         let order_list = &mut self.bids;
         // Insert Limit Order
         order_list.insert_order(insert_order)
     }
 
     /// Insert Limit Sell Order **without** matching
-    pub(crate) fn insert_sell_order(&mut self, insert_order: Order) {
+    fn insert_sell_order(&mut self, insert_order: Order) {
         let order_list = &mut self.asks;
         // Insert Limit Order
         order_list.insert_order(insert_order)
     }
 
-    pub fn remove_buy_order(&mut self, remove_order: Order) {
+    /// Remove Buy Order (Buy side)
+    /// ToDo: there should be a check if the order even exists in the orderbook
+    pub fn remove_buy_order(&mut self, remove_order: Order) -> bool {
         let order_book = &mut self.bids.order_list;
         Self::remove_order(remove_order, order_book)
     }
 
-    pub fn remove_sell_order(&mut self, remove_order: Order) {
+    /// Remove Sell Order (Sell side)
+    /// ToDo: there should be a check if the order even exists in the orderbook
+    pub fn remove_sell_order(&mut self, remove_order: Order) -> bool {
         let order_book = &mut self.asks.order_list;
         Self::remove_order(remove_order, order_book)
     }
@@ -171,7 +236,8 @@ impl OrderBook {
     fn remove_order(
         remove_order: Order,
         order_book: &mut IndexMap<Price, VecDeque<IdentifiableOrder>>,
-    ) {
+    ) -> bool {
+        todo!("Review correctness of this function");
         if let Some(orders_on_price_level) = order_book.get_mut(remove_order.get_price()) {
             // If the first statement is wrong, the second never gets executed.
             // If the first statement is correct, the second statement never panics.
@@ -179,7 +245,7 @@ impl OrderBook {
                 && orders_on_price_level.front().unwrap() == remove_order.get_order()
             {
                 // If there is only one entry, we can delete the whole indexmap entry
-                order_book.remove_entry(remove_order.get_price());
+                order_book.swap_remove_entry(remove_order.get_price());
             } else {
                 // Decide if we want to add price level index to orders or not
                 //orders_on_price_level.remove(remove_order.get_price_level_index().unwrap());
@@ -196,6 +262,7 @@ impl OrderBook {
                 //todo!()
             }
         }
+        true
     }
 }
 
@@ -701,6 +768,51 @@ mod tests {
     }
 
     #[test]
+    fn depth_queries_select_price_levels_closest_to_the_market() {
+        let mut order_book = OrderBook::default();
+
+        for ticks in [300, 100, 200] {
+            let order = Order::new(Price::from_ticks(ticks), IdentifiableOrder::new(ticks, 1));
+            order_book.insert_buy_order(order.clone());
+            order_book.insert_sell_order(order);
+        }
+        order_book.insert_buy_order(Order::new(
+            Price::from_ticks(300),
+            IdentifiableOrder::new(301, 4),
+        ));
+
+        assert_eq!(
+            order_book
+                .bids(2)
+                .unwrap()
+                .into_iter()
+                .map(|level| (level.price(), level.qty()))
+                .collect::<Vec<_>>(),
+            [(Price::from_ticks(200), 1), (Price::from_ticks(300), 5)]
+        );
+        assert_eq!(
+            order_book
+                .asks(2)
+                .unwrap()
+                .into_iter()
+                .map(|level| (level.price(), level.qty()))
+                .collect::<Vec<_>>(),
+            [(Price::from_ticks(100), 1), (Price::from_ticks(200), 1)]
+        );
+    }
+
+    #[test]
+    fn depth_aggregation_reports_quantity_overflow() {
+        let mut order_book = OrderBook::default();
+        let price = Price::from_ticks(100);
+
+        order_book.insert_buy_order(Order::new(price, IdentifiableOrder::new(1, u64::MAX)));
+        order_book.insert_buy_order(Order::new(price, IdentifiableOrder::new(2, 1)));
+
+        assert_eq!(order_book.bids(1).unwrap_err().price(), price);
+    }
+
+    #[test]
     fn test_inserts_remove() {
         let (buy_side, buy_remove_list) = fill_bids_pseudorandom();
         let (sell_side, sell_remove_list) = fill_bids_pseudorandom();
@@ -721,7 +833,7 @@ mod tests {
             order_book.bids.order_list.len()
         );
         for remove_order in buy_remove_list {
-            order_book.remove_buy_order(remove_order)
+            assert!(order_book.remove_buy_order(remove_order))
         }
         debug!(
             "After Remove Bid Orderbook length {}",
@@ -732,7 +844,7 @@ mod tests {
             order_book.asks.order_list.len()
         );
         for remove_order in sell_remove_list {
-            order_book.remove_sell_order(remove_order)
+            assert!(order_book.remove_sell_order(remove_order))
         }
         debug!(
             "After Remove Ask Orderbook length {}",

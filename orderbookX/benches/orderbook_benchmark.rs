@@ -1,9 +1,9 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use orderbook_x::{
     orderbook::{IdentifiableOrder, Order, OrderBook},
-    price::Price,
     traits::matching_engine::MatchingEngine,
 };
+use price::Price;
 use rand::Rng;
 
 fn fill_and_match() {

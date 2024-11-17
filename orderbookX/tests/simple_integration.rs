@@ -1,20 +1,20 @@
 use orderbook_x::{
     orderbook::{IdentifiableOrder, Order, OrderBook},
-    price::Price,
     traits::matching_engine::MatchingEngine,
 };
+use price::Price;
 use tracing::{trace, Level};
-use tracing_subscriber::{self, FmtSubscriber};
+use tracing_subscriber::FmtSubscriber;
 
 #[test]
 fn simple_integration() {
     // Set up tracing subscriber
     let subscriber = FmtSubscriber::builder()
-        // capture all events with level higher or equal to TRACE
+        // Capture all events with level higher or equal to TRACE
         .with_max_level(Level::TRACE)
         .finish();
 
-    // set the subscriber as the default to use in the program
+    // Set the subscriber as the default to use in the program
     tracing::subscriber::set_global_default(subscriber).expect("setting default subscriber failed");
 
     trace!("Short Showcase of Orderbook:");
