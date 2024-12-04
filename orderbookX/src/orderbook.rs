@@ -1,9 +1,12 @@
-//! OrderBook for the Matching Engine
+//! `OrderBook` for the Matching Engine
 //!
-//! The OrderBook is the central data structure of the matching engine.
-//! All matching engine logic is residing in the OrderBook.
+//! The `OrderBook` is the central data structure of the matching engine.
+//! All matching engine logic is residing in the `OrderBook`.
 //!
-//! The OrderBook is responsible for inserting, removing, matching orders and executing trades.
+//! The `OrderBook` is responsible for inserting, removing, matching orders and executing trades.
+//!
+//! Normally, the orderbook should never be responsible for providing read-only information that needs transformation i.e.,
+//! additional cost to compute a value from an existing one, if it can be done on the client side.
 
 mod identifiable_order;
 mod orders;
@@ -11,19 +14,18 @@ use core::fmt;
 use std::collections::VecDeque;
 
 pub use identifiable_order::IdentifiableOrder;
-use indexmap::IndexMap;
 pub use orders::{Order, PriceLevel, QuantityOverflow};
 use price::Price;
 use tracing::{debug, trace};
 
 use crate::{
-    orderbook::orders::OrderList,
-    traits::matching_engine::{MatchingEngine, OrderType},
+    orderbook::orders::{OrderList, OrderQueue},
+    traits::matching_engine::Orders,
 };
 
-/// OrderBook struct representing the orderbook
+/// `OrderBook` struct representing the orderbook
 ///
-/// The OrderBook contains two OrderLists, one for the buy side and one for the sell side.
+/// The `OrderBook` contains two `OrderList`, one for the buy side and one for the sell side.
 #[derive(Default, Debug)]
 pub struct OrderBook {
     bids: OrderList,
@@ -37,23 +39,24 @@ impl fmt::Display for OrderBook {
 }
 
 impl OrderBook {
-    /// Create a new OrderBook
+    /// Create a new `OrderBook`
+    #[must_use]
     pub fn new(bids: OrderList, asks: OrderList) -> Self {
         Self { bids, asks }
     }
 
-    /// Create an OrderBook from serialized state
+    /// Create an `OrderBook` from serialized state
+    #[must_use]
     pub fn new_from_state() -> Self {
-        // Create OrderBook from serialized state
         unimplemented!("Create OrderBook from serialized state")
     }
 
-    /// Serialize OrderBook state and shut down
+    /// Serialize `OrderBook` state and shut down
     pub fn exit_to_state(&self) {
-        // Serialize OrderBook state and shut down
         unimplemented!("Serialize OrderBook state")
     }
     /// Creates a small deterministic order book for examples and tests.
+    #[must_use]
     pub fn create_test_orderbook() -> Self {
         let mut order_book = OrderBook::default();
 
@@ -77,20 +80,22 @@ impl OrderBook {
 /// Should be used mainly for test & debugging purposes
 impl OrderBook {
     /// Get the amount of open limit orders in the orderbook.
-    pub fn get_amount_open_orders(&self) -> usize {
-        self.bids.get_amount_open_orders() + self.asks.get_amount_open_orders()
+    /// Sum of open orders on buy and sell side.
+    #[must_use]
+    pub fn sum_open_orders(&self) -> usize {
+        self.bids.amount_open_orders() + self.asks.amount_open_orders()
     }
 
     /// Returns current market price.
     /// Note: Should be used for test & debugging purposes
     ///
     /// Current market price is defined as the highest bid price currently in the orderbook.
-    ///
     /// If no bids exist, then the price is the lowest ask price in the orderbook.
     ///
-    /// It is **not** defined as the last matched trade price.
-    /// Users should receive this based on the last matched trade through events.
-    fn get_price(&self) -> Option<&Price> {
+    /// It is **not** defined as the last matched trade price, users should receive this
+    /// based on the last matched trade through events.
+    #[must_use]
+    pub fn market_price(&self) -> Option<&Price> {
         if let Some(price) = self
             .bids
             .order_list
@@ -108,7 +113,9 @@ impl OrderBook {
 
     /// Get the highest bid price from the orderbook
     /// Note: Should be used for test & debugging purposes
-    pub fn highest_bid(&self) -> Option<&Price> {
+    /// TODO: Remove Option<&Price> and return Price directly
+    #[must_use]
+    pub fn highest_bid_price(&self) -> Option<&Price> {
         // get highest bid from buy side
         if let Some((price, _)) = self.bids.order_list.last() {
             Some(price)
@@ -119,7 +126,9 @@ impl OrderBook {
 
     /// Get the lowest ask price from the orderbook
     /// Note: Should be used for test & debugging purposes
-    pub fn lowest_ask(&self) -> Option<&Price> {
+    /// TODO: Remove Option<&Price> and return Price directly
+    #[must_use]
+    pub fn lowest_ask_price(&self) -> Option<&Price> {
         // get lowest ask price from sell side
         if let Some((price, _)) = self.asks.order_list.first() {
             Some(price)
@@ -129,15 +138,23 @@ impl OrderBook {
     }
 
     /// Get the highest bid price and all orders at that price level
+    #[must_use]
     pub fn highest_bids(&self) -> Option<(&Price, &VecDeque<IdentifiableOrder>)> {
         // get highest bidders from buy side
-        self.bids.order_list.last()
+        self.bids
+            .order_list
+            .last()
+            .map(|(price, orders)| (price, orders.orders()))
     }
 
     /// Get the lowest ask price and all orders at that price level
+    #[must_use]
     pub fn lowest_asks(&self) -> Option<(&Price, &VecDeque<IdentifiableOrder>)> {
         // get lowest asks from sell side
-        self.asks.order_list.first()
+        self.asks
+            .order_list
+            .first()
+            .map(|(price, orders)| (price, orders.orders()))
     }
 
     /// Note: Should be used for test & debugging purposes
@@ -153,7 +170,7 @@ impl OrderBook {
             .order_list
             .iter()
             .take(depth)
-            .map(|(price, orders)| PriceLevel::from_orders(*price, orders))
+            .map(|(price, orders)| PriceLevel::from_orders(*price, orders.orders()))
             .collect()
     }
 
@@ -175,101 +192,89 @@ impl OrderBook {
             .rev()
             .take(depth)
             .rev()
-            .map(|(price, orders)| PriceLevel::from_orders(*price, orders))
+            .map(|(price, orders)| PriceLevel::from_orders(*price, orders.orders()))
             .collect()
     }
 }
 
 /// Mutating functions
 impl OrderBook {
-    fn highest_bids_mut(&mut self) -> Option<(&Price, &mut VecDeque<IdentifiableOrder>)> {
+    fn highest_bids_mut(&mut self) -> Option<(&Price, &mut OrderQueue)> {
         // get highest bidders from buy side
         self.bids.order_list.last_mut()
     }
 
-    fn lowest_asks_mut(&mut self) -> Option<(&Price, &mut VecDeque<IdentifiableOrder>)> {
+    fn lowest_asks_mut(&mut self) -> Option<(&Price, &mut OrderQueue)> {
         // get lowest asks from sell side
         self.asks.order_list.first_mut()
     }
 
     /// Insert Limit Buy Order **without** matching
-    fn insert_buy_order(&mut self, insert_order: Order) {
+    fn insert_buy_order(&mut self, insert_order: Order) -> bool {
         let order_list = &mut self.bids;
         // Insert Limit Order
         order_list.insert_order(insert_order)
     }
 
     /// Insert Limit Sell Order **without** matching
-    fn insert_sell_order(&mut self, insert_order: Order) {
+    fn insert_sell_order(&mut self, insert_order: Order) -> bool {
         let order_list = &mut self.asks;
         // Insert Limit Order
         order_list.insert_order(insert_order)
     }
 
-    /// Remove Buy Order (Buy side)
-    /// ToDo: there should be a check if the order even exists in the orderbook
-    pub fn remove_buy_order(&mut self, remove_order: Order) -> bool {
-        let order_book = &mut self.bids.order_list;
+    /// Remove a buy order by price and identifier.
+    ///
+    /// Returns `true` when an order was removed.
+    pub fn remove_buy_order(&mut self, remove_order: &Order) -> bool {
+        let order_book = &mut self.bids;
         Self::remove_order(remove_order, order_book)
     }
 
-    /// Remove Sell Order (Sell side)
-    /// ToDo: there should be a check if the order even exists in the orderbook
-    pub fn remove_sell_order(&mut self, remove_order: Order) -> bool {
-        let order_book = &mut self.asks.order_list;
+    /// Remove a sell order by price and identifier.
+    ///
+    /// Returns `true` when an order was removed.
+    pub fn remove_sell_order(&mut self, remove_order: &Order) -> bool {
+        let order_book = &mut self.asks;
         Self::remove_order(remove_order, order_book)
     }
 
-    // ToDo: Rename this function, its hella confusing
-    fn remove_ask_price_level(&mut self, key: &Price) -> Option<VecDeque<IdentifiableOrder>> {
-        // ToDo: With some indexing magic in the matching functions this might be able to use remove
-        self.asks.order_list.shift_remove(key) // O(n)
+    /// Removes the given price level from the ask-side (sell-side) of the orderbook
+    fn delete_sellside_price_level(&mut self, key: Price) -> Option<OrderQueue> {
+        // ToDo: With some indexing magic in the matching functions this might be able to use .remove
+        self.asks.order_list.shift_remove(&key) // O(n)
     }
 
-    // ToDo: Rename this function, its hella confusing
-    fn remove_bid_price_level(&mut self, key: &Price) -> Option<VecDeque<IdentifiableOrder>> {
-        // ToDo: With some indexing magic in the matching functions this might be able to use remove
-        self.bids.order_list.shift_remove(key) // O(n)
+    /// Removes the given price level from the bid-side (buy-side) of the orderbook
+    fn delete_buyside_price_level(&mut self, key: Price) -> Option<OrderQueue> {
+        // ToDo: With some indexing magic in the matching functions this might be able to use .remove
+        self.bids.order_list.shift_remove(&key) // O(n)
     }
 
     /// Order Modification: Remove/Cancel an Order
-    fn remove_order(
-        remove_order: Order,
-        order_book: &mut IndexMap<Price, VecDeque<IdentifiableOrder>>,
-    ) -> bool {
-        todo!("Review correctness of this function");
-        if let Some(orders_on_price_level) = order_book.get_mut(remove_order.get_price()) {
-            // If the first statement is wrong, the second never gets executed.
-            // If the first statement is correct, the second statement never panics.
-            if orders_on_price_level.len() == 1
-                && orders_on_price_level.front().unwrap() == remove_order.get_order()
-            {
-                // If there is only one entry, we can delete the whole indexmap entry
-                order_book.swap_remove_entry(remove_order.get_price());
-            } else {
-                // Decide if we want to add price level index to orders or not
-                //orders_on_price_level.remove(remove_order.get_price_level_index().unwrap());
-                // If not we may do something like:
-                for (i, order) in orders_on_price_level.iter().enumerate() {
-                    if order == remove_order.get_order() {
-                        // Multiple orders on that level, only delete the relevant entry
-                        orders_on_price_level.remove(i);
-                        break;
-                    }
-                }
-                // ToDo: think about memory reallocation and if the order can be yanked somehow first before removing it
-                // ToDo: maybe let matching remove it or some worker in the background during low load times
-                //todo!()
-            }
+    fn remove_order(remove_order: &Order, order_book: &mut OrderList) -> bool {
+        let price = remove_order.price();
+        let identifier = remove_order.order().id();
+        let Some(orders_on_price_level) = order_book.order_list.get_mut(price) else {
+            return false;
+        };
+        if !orders_on_price_level.remove(identifier) {
+            return false;
         }
+
+        if orders_on_price_level.is_empty() {
+            // Preserve the sorted price-level order used by matching.
+            order_book.order_list.shift_remove(price);
+        }
+
         true
     }
 }
 
-impl MatchingEngine for OrderBook {
+impl Orders for OrderBook {
     fn market_buy_until(&mut self, mut buy_order: Order) -> (bool, u64, u64, Order) {
         // Market buy order quantity
-        let market_buy_qty = buy_order.get_order().get_qty();
+        let market_buy_qty = buy_order.order().qty();
 
         // Get first sell orders to match
         let Some(mut price_level) = self.lowest_asks_mut() else {
@@ -280,7 +285,7 @@ impl MatchingEngine for OrderBook {
         let mut market_price = *price_level.0;
 
         // Check until
-        if buy_order.get_price() < &market_price {
+        if buy_order.price() < &market_price {
             // buy order price is lower than any asks, nothing to match, order stays the same
             return (true, market_buy_qty, 0, buy_order);
         }
@@ -292,9 +297,9 @@ impl MatchingEngine for OrderBook {
 
         // Accumulates the qty until it reaches the orders amount or reaches buy_order price
         let mut accumulator: u64 = 0;
-        while accumulator < market_buy_qty && &market_price <= buy_order.get_price() {
+        while accumulator < market_buy_qty && &market_price <= buy_order.price() {
             if let Some(matching_candidate) = orders.front() {
-                accumulator += matching_candidate.get_qty();
+                accumulator += matching_candidate.qty();
                 // Settle execution
                 if accumulator <= market_buy_qty {
                     // We can remove matched order from the orderbook
@@ -303,7 +308,7 @@ impl MatchingEngine for OrderBook {
                     if accumulator == market_buy_qty && orders.is_empty() {
                         // No orders left at the given price
                         // Remove price level from orderbook
-                        let _ = self.remove_ask_price_level(&market_price).unwrap();
+                        let _ = self.delete_sellside_price_level(market_price).unwrap();
                         // We are done here
                         break;
                     }
@@ -327,7 +332,7 @@ impl MatchingEngine for OrderBook {
             } else {
                 // No orders left at the given price, go to a higher price level
                 // 1. Remove price level from orderbook
-                let _ = self.remove_ask_price_level(&market_price).unwrap();
+                let _ = self.delete_sellside_price_level(market_price).unwrap();
                 debug!("Removed Price Level: {}", market_price);
                 // 2. Update to next price level
                 if let Some(next_matches) = self.lowest_asks_mut() {
@@ -344,12 +349,10 @@ impl MatchingEngine for OrderBook {
                     // All orders are removed and the orderbook is empty
                     // Limit buy is only partially executed
                 }
-            };
+            }
         }
         // Reduce order by filled amount
-        buy_order
-            .get_order_mut()
-            .set_qty(market_buy_qty - accumulator);
+        buy_order.order_mut().set_qty(market_buy_qty - accumulator);
         // Usual Outcome:
         // All orders are removed including indexmap price levels if they are completely filled
         // The last remaining order in the FIFO queue of the given price level was either exactly equal and was completely filled or only partially filled
@@ -357,7 +360,7 @@ impl MatchingEngine for OrderBook {
     }
 
     fn market_sell_until(&mut self, mut sell_order: Order) -> (bool, u64, u64, Order) {
-        let market_sell_qty = sell_order.get_order().get_qty();
+        let market_sell_qty = sell_order.order().qty();
 
         // Get first buy orders to match
         let Some(mut price_level) = self.highest_bids_mut() else {
@@ -368,7 +371,7 @@ impl MatchingEngine for OrderBook {
         let mut market_price = *price_level.0;
 
         // Check until
-        if sell_order.get_price() > &market_price {
+        if sell_order.price() > &market_price {
             // sell order price is higher than any bids, nothing to match, order stays the same
             return (true, market_sell_qty, 0, sell_order);
         }
@@ -379,9 +382,9 @@ impl MatchingEngine for OrderBook {
 
         // Accumulates the qty until it reaches the orders amount or reaches sell_order price
         let mut accumulator: u64 = 0;
-        while accumulator < market_sell_qty && sell_order.get_price() <= &market_price {
+        while accumulator < market_sell_qty && sell_order.price() <= &market_price {
             if let Some(matching_candidate) = orders.front() {
-                accumulator += matching_candidate.get_qty();
+                accumulator += matching_candidate.qty();
                 // Settle execution
                 if accumulator <= market_sell_qty {
                     // We can remove matched order from the orderbook
@@ -390,7 +393,7 @@ impl MatchingEngine for OrderBook {
                     if accumulator == market_sell_qty && orders.is_empty() {
                         // No orders left at the given price
                         // Remove price level from orderbook
-                        let _ = self.remove_bid_price_level(&market_price).unwrap();
+                        let _ = self.delete_buyside_price_level(market_price).unwrap();
                         break;
                     }
                     // Fire Event
@@ -411,7 +414,7 @@ impl MatchingEngine for OrderBook {
                 // Go to next element on same price level
             } else {
                 // No orders left at the given price, go to a lower price level
-                let _ = self.remove_bid_price_level(&market_price).unwrap();
+                let _ = self.delete_buyside_price_level(market_price).unwrap();
                 debug!("Removed Price Level: {}", market_price);
 
                 if let Some(next_matches) = self.highest_bids_mut() {
@@ -423,11 +426,11 @@ impl MatchingEngine for OrderBook {
                 } else {
                     break;
                 }
-            };
+            }
         }
 
         sell_order
-            .get_order_mut()
+            .order_mut()
             .set_qty(market_sell_qty - accumulator);
 
         (true, market_sell_qty, accumulator, sell_order)
@@ -439,7 +442,7 @@ impl MatchingEngine for OrderBook {
     /// Removes Liquidity/Orders from the Orderbook.
     fn market_buy(&mut self, buy_order: Order) -> (bool, u64, u64) {
         // Market buy order quantity
-        let market_buy_qty = buy_order.get_order().get_qty();
+        let market_buy_qty = buy_order.order().qty();
 
         // Get first sell orders to match
         let Some(mut price_level) = self.lowest_asks_mut() else {
@@ -457,7 +460,7 @@ impl MatchingEngine for OrderBook {
         let mut accumulator: u64 = 0;
         while accumulator < market_buy_qty {
             if let Some(matching_candidate) = orders.front() {
-                accumulator += matching_candidate.get_qty();
+                accumulator += matching_candidate.qty();
                 // Settle execution
                 if accumulator <= market_buy_qty {
                     // We can remove matched order from the orderbook
@@ -466,7 +469,7 @@ impl MatchingEngine for OrderBook {
                     if accumulator == market_buy_qty && orders.is_empty() {
                         // No orders left at the given price
                         // Remove price level from orderbook
-                        let _ = self.remove_ask_price_level(&market_price).unwrap();
+                        let _ = self.delete_sellside_price_level(market_price).unwrap();
                         // We are done here
                         break;
                     }
@@ -490,7 +493,7 @@ impl MatchingEngine for OrderBook {
             } else {
                 // No orders left at the given price, go to a higher price level
                 // 1. Remove price level from orderbook
-                let _ = self.remove_ask_price_level(&market_price).unwrap();
+                let _ = self.delete_sellside_price_level(market_price).unwrap();
                 debug!("Removed Price Level: {}", market_price);
                 // 2. Update to next price level
                 if let Some(next_matches) = self.lowest_asks_mut() {
@@ -507,7 +510,7 @@ impl MatchingEngine for OrderBook {
                     // All orders are removed and the orderbook is empty
                     // Market buy is only partially executed
                 }
-            };
+            }
         }
 
         // Usual Outcome:
@@ -522,7 +525,7 @@ impl MatchingEngine for OrderBook {
     /// Removes Liquidity/Orders from the Orderbook.
     fn market_sell(&mut self, sell_order: Order) -> (bool, u64, u64) {
         // Market sell order quantity
-        let market_sell_qty = sell_order.get_order().get_qty();
+        let market_sell_qty = sell_order.order().qty();
 
         // Get first buy orders to match
         debug!("Highest Bids: {:?}", self.highest_bids_mut());
@@ -542,7 +545,7 @@ impl MatchingEngine for OrderBook {
         let mut accumulator: u64 = 0;
         while accumulator < market_sell_qty {
             if let Some(matching_candidate) = orders.front() {
-                accumulator += matching_candidate.get_qty();
+                accumulator += matching_candidate.qty();
                 // Settle execution
                 if accumulator <= market_sell_qty {
                     // We can remove matched order from the orderbook
@@ -551,7 +554,7 @@ impl MatchingEngine for OrderBook {
                     if accumulator == market_sell_qty && orders.is_empty() {
                         // No orders left at the given price
                         // Remove price level from orderbook
-                        let _ = self.remove_bid_price_level(&market_price).unwrap();
+                        let _ = self.delete_buyside_price_level(market_price).unwrap();
                         // We are done here
                         break;
                     }
@@ -577,7 +580,7 @@ impl MatchingEngine for OrderBook {
                 debug!("Orders in the FIFO Queue: {:?}", orders);
                 debug!("Current Price Level: {}", market_price);
                 // 1. Remove price level from orderbook
-                let _ = self.remove_bid_price_level(&market_price).unwrap();
+                let _ = self.delete_buyside_price_level(market_price).unwrap();
                 debug!("Removed Price Level: {}", market_price);
                 // 2. Update to next price level
                 if let Some(next_matches) = self.highest_bids_mut() {
@@ -594,7 +597,7 @@ impl MatchingEngine for OrderBook {
                     // All orders are removed and the orderbook is empty
                     // Market sell is only partially executed
                 }
-            };
+            }
         }
 
         // Usual Outcome:
@@ -604,40 +607,41 @@ impl MatchingEngine for OrderBook {
     }
 
     /// Insert Limit Buy Order by matching and inserting the remaining order into the orderbook
-    fn insert_limit_buy(&mut self, order: Order) {
-        let (result, qty, filled, order) = self.market_buy_until(order);
-        if order.get_order().get_qty() > 0 {
-            self.insert_buy_order(order);
+    fn insert_limit_buy(&mut self, order: Order) -> bool {
+        if self
+            .bids
+            .contains_identifier(*order.price(), order.order().id())
+        {
+            return false;
         }
+
+        // TODO: change this logic. The insert_limit_buy should not invoke matching every time
+        // TODO: return result, qty, filled, order
+        let (_result, _qty, _filled, order) = self.market_buy_until(order);
+        if order.order().qty() > 0 {
+            return self.insert_buy_order(order);
+        }
+
+        true
     }
 
     /// Insert Limit Sell Order by matching and inserting the remaining order into the orderbook
-    fn insert_limit_sell(&mut self, order: Order) {
-        let (result, qty, filled, order) = self.market_sell_until(order);
-        if order.get_order().get_qty() > 0 {
-            self.insert_sell_order(order);
+    fn insert_limit_sell(&mut self, order: Order) -> bool {
+        if self
+            .asks
+            .contains_identifier(*order.price(), order.order().id())
+        {
+            return false;
         }
-    }
 
-    fn limit_or_cancel_insert(&mut self, order: Order, order_type: OrderType) {
-        match order_type {
-            OrderType::Buy => {}
-            OrderType::Sell => {}
+        // TODO: change this logic. The insert_limit_buy should not invoke matching every time
+        // TODO: return result, qty, filled, order
+        let (_result, _qty, _filled, order) = self.market_sell_until(order);
+        if order.order().qty() > 0 {
+            return self.insert_sell_order(order);
         }
-    }
 
-    fn immediate_or_cancel_insert(&mut self, order: Order, order_type: OrderType) {
-        match order_type {
-            OrderType::Buy => {}
-            OrderType::Sell => {}
-        }
-    }
-
-    fn fill_or_kill_insert(&mut self, order: Order, order_type: OrderType) {
-        match order_type {
-            OrderType::Buy => {}
-            OrderType::Sell => {}
-        }
+        true
     }
 }
 
@@ -676,12 +680,12 @@ mod tests {
         let mut remove_list = vec![];
         let mut rng = rand::thread_rng();
 
-        for _ in 0..1000 {
+        for identifier in 0..1000_u64 {
             let price = rng.gen_range(1..=100_u64);
             let mut hasher = DefaultHasher::new();
             hasher.write_u64(price);
             let qty = hasher.finish() % 250_000;
-            let identifiable_order = IdentifiableOrder::new(1, qty);
+            let identifiable_order = IdentifiableOrder::new(identifier, qty);
             let order = Order::new(Price::from_ticks(price * 100), identifiable_order);
             remove_list.push(order.clone());
             bid_list.insert_order(order);
@@ -696,12 +700,12 @@ mod tests {
         let mut remove_list = vec![];
         let mut rng = rand::thread_rng();
 
-        for _ in 0..1000 {
+        for identifier in 0..1000_u64 {
             let price = rng.gen_range(1..=100_u64);
             let mut hasher = DefaultHasher::new();
             hasher.write_u64(price);
             let qty = hasher.finish() % 250_000;
-            let identifiable_order = IdentifiableOrder::new(1, qty);
+            let identifiable_order = IdentifiableOrder::new(identifier, qty);
             let order = Order::new(Price::from_ticks(price * 100), identifiable_order);
             remove_list.push(order.clone());
             ask_list.insert_order(order);
@@ -715,12 +719,12 @@ mod tests {
         let mut orders = vec![];
         let mut rng = rand::thread_rng();
 
-        for _ in 0..amount {
+        for identifier in 0..amount {
             let price = rng.gen_range(1..=100_u64);
             let mut hasher = DefaultHasher::new();
             hasher.write_u64(price);
             let qty = hasher.finish() % 250_000;
-            let identifiable_order = IdentifiableOrder::new(1, qty);
+            let identifiable_order = IdentifiableOrder::new(identifier, qty);
             let order = Order::new(Price::from_ticks(price * 100), identifiable_order);
             orders.push(order);
         }
@@ -761,10 +765,7 @@ mod tests {
         );
 
         order_book.market_buy(Order::new(Price::MAX, IdentifiableOrder::new(2, 1)));
-        assert_eq!(
-            order_book.lowest_ask().map(|(price, _)| *price),
-            Some(prices[1])
-        );
+        assert_eq!(order_book.lowest_ask_price().copied(), Some(prices[1]));
     }
 
     #[test]
@@ -813,6 +814,97 @@ mod tests {
     }
 
     #[test]
+    fn cancellation_uses_identifier_and_preserves_price_order() {
+        let mut order_book = OrderBook::default();
+
+        for (ticks, identifier, qty) in [(100, 1, 10), (200, 2, 20), (200, 3, 30), (300, 4, 40)] {
+            order_book.insert_buy_order(Order::new(
+                Price::from_ticks(ticks),
+                IdentifiableOrder::new(identifier, qty),
+            ));
+        }
+
+        let cancellation = Order::new(Price::from_ticks(200), IdentifiableOrder::new(3, 0));
+        assert!(order_book.remove_buy_order(&cancellation));
+        assert_eq!(
+            order_book.bids.order_list[&Price::from_ticks(200)]
+                .orders()
+                .iter()
+                .map(IdentifiableOrder::id)
+                .collect::<Vec<_>>(),
+            [2]
+        );
+        assert!(!order_book.remove_buy_order(&cancellation));
+
+        let remaining_order = Order::new(Price::from_ticks(200), IdentifiableOrder::new(2, 0));
+        assert!(order_book.remove_buy_order(&remaining_order));
+        assert_eq!(
+            order_book
+                .bids
+                .order_list
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            [Price::from_ticks(100), Price::from_ticks(300)]
+        );
+        assert_eq!(
+            order_book.highest_bid_price(),
+            Some(&Price::from_ticks(300))
+        );
+
+        let unknown_price = Order::new(Price::from_ticks(999), IdentifiableOrder::new(1, 0));
+        assert!(!order_book.remove_buy_order(&unknown_price));
+    }
+
+    #[test]
+    fn duplicate_identifiers_at_one_price_are_rejected_before_matching() {
+        let mut order_book = OrderBook::default();
+        let price = Price::from_ticks(200);
+
+        assert!(order_book.insert_limit_buy(Order::new(price, IdentifiableOrder::new(7, 10),)));
+        assert!(!order_book.insert_limit_buy(Order::new(price, IdentifiableOrder::new(7, 99),)));
+
+        let (_, orders) = order_book.highest_bids().unwrap();
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders.front().unwrap().qty(), 10);
+
+        // The price remains part of the cancellation key, so reusing an
+        // identifier at another price is unambiguous and remains supported.
+        assert!(order_book.insert_limit_buy(Order::new(
+            Price::from_ticks(201),
+            IdentifiableOrder::new(7, 20),
+        )));
+        let cancellation = Order::new(price, IdentifiableOrder::new(7, 0));
+        assert!(order_book.remove_buy_order(&cancellation));
+        assert_eq!(
+            order_book.highest_bid_price(),
+            Some(&Price::from_ticks(201))
+        );
+    }
+
+    #[test]
+    fn identifier_index_tracks_cancelled_and_filled_orders() {
+        let mut order_book = OrderBook::default();
+        let price = Price::from_ticks(200);
+
+        assert!(order_book.insert_limit_buy(Order::new(price, IdentifiableOrder::new(1, 10),)));
+        assert!(order_book.insert_limit_buy(Order::new(price, IdentifiableOrder::new(2, 10),)));
+
+        let cancellation = Order::new(price, IdentifiableOrder::new(1, 0));
+        assert!(order_book.remove_buy_order(&cancellation));
+        assert!(order_book.insert_limit_buy(Order::new(price, IdentifiableOrder::new(1, 10),)));
+
+        order_book.market_sell(Order::new(Price::ZERO, IdentifiableOrder::new(99, 10)));
+        assert!(order_book.insert_limit_buy(Order::new(price, IdentifiableOrder::new(2, 10),)));
+
+        let (_, orders) = order_book.highest_bids().unwrap();
+        assert_eq!(
+            orders.iter().map(IdentifiableOrder::id).collect::<Vec<_>>(),
+            [1, 2]
+        );
+    }
+
+    #[test]
     fn test_inserts_remove() {
         let (buy_side, buy_remove_list) = fill_bids_pseudorandom();
         let (sell_side, sell_remove_list) = fill_bids_pseudorandom();
@@ -833,7 +925,7 @@ mod tests {
             order_book.bids.order_list.len()
         );
         for remove_order in buy_remove_list {
-            assert!(order_book.remove_buy_order(remove_order))
+            assert!(order_book.remove_buy_order(&remove_order));
         }
         debug!(
             "After Remove Bid Orderbook length {}",
@@ -844,7 +936,7 @@ mod tests {
             order_book.asks.order_list.len()
         );
         for remove_order in sell_remove_list {
-            assert!(order_book.remove_sell_order(remove_order))
+            assert!(order_book.remove_sell_order(&remove_order));
         }
         debug!(
             "After Remove Ask Orderbook length {}",

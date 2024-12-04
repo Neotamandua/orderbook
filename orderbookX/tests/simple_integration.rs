@@ -1,6 +1,6 @@
 use orderbook_x::{
     orderbook::{IdentifiableOrder, Order, OrderBook},
-    traits::matching_engine::MatchingEngine,
+    traits::matching_engine::Orders,
 };
 use price::Price;
 use tracing::{trace, Level};
@@ -22,10 +22,7 @@ fn simple_integration() {
     let mut order_book = OrderBook::default();
 
     trace!("Empty Orderbook:\n{}", order_book);
-    trace!(
-        "Amount of open orders: {}",
-        order_book.get_amount_open_orders()
-    );
+    trace!("Amount of open orders: {}", order_book.sum_open_orders());
 
     // Insert limit buy orders
     order_book.insert_limit_buy(Order::new(
@@ -42,10 +39,7 @@ fn simple_integration() {
     ));
 
     trace!("Orderbook After Buy Order Insertion:\n{}", order_book);
-    trace!(
-        "Amount of open orders: {}",
-        order_book.get_amount_open_orders()
-    );
+    trace!("Amount of open orders: {}", order_book.sum_open_orders());
 
     // Insert limit sell orders
     order_book.insert_limit_sell(Order::new(
@@ -58,10 +52,7 @@ fn simple_integration() {
         IdentifiableOrder::new(4, 60),
     ));
     trace!("Orderbook After Sell Order Insertion:\n{}", order_book);
-    trace!(
-        "Amount of open orders: {}",
-        order_book.get_amount_open_orders()
-    );
+    trace!("Amount of open orders: {}", order_book.sum_open_orders());
 
     // Insert single limit buy order again
     order_book.insert_limit_buy(Order::new(
@@ -70,8 +61,5 @@ fn simple_integration() {
     ));
 
     trace!("Orderbook After Buy Order Insertion:\n{}", order_book);
-    trace!(
-        "Amount of open orders: {}",
-        order_book.get_amount_open_orders()
-    );
+    trace!("Amount of open orders: {}", order_book.sum_open_orders());
 }
