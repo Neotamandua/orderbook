@@ -1,0 +1,15 @@
+syntax = "proto3";
+
+package stream;
+
+service EventStream {
+  rpc StreamEvents (StreamRequest) returns (stream StreamReply);
+}
+
+message StreamRequest {
+}
+
+message StreamReply {
+    string event_topic = 1;
+    bytes json_bytes = 2;
+}
