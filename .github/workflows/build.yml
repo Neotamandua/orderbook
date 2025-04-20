@@ -11,7 +11,7 @@ jobs:
     name: Test Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - run: rustup toolchain install stable --profile minimal
       - run: sudo apt install -y protobuf-compiler
       - name: cargo build test
