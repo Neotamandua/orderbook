@@ -40,7 +40,14 @@ I developed this implementation primarily to gain a deeper understanding of matc
 | Immediate or Cancel Order | An order to buy or sell immediately, and any unfilled portion is canceled.                               |
 | Fill or Kill Order        | An order to buy or sell, which must be executed in its entirety immediately or canceled.                 |
 
-## 
+## Modules
+
+| Module          | Description                                                           |
+| --------------- | --------------------------------------------------------------------- |
+| Price           | Module for providing a two decimal point price structure              |
+| Orderbook       | Core of the orderbook structure                                       |
+| Matching Engine | Trait defining supported order types by the orderbook/matching engine |
+| gRPC service    | Example implementation which uses the orderbook through gRPC          |
 
 ## Usage
 
