@@ -1,24 +1,25 @@
-//! gRPC example client for the orderbook service
-//!
-//! Normally this would be its own application, but for simplicity it is included here as an
-//! example client. Limit prices cross the service boundary as canonical integer ticks.
+//! Interactive gRPC example client for the orderbook service.
 
 use std::fmt::{Display, Formatter, Result as FmtResult};
 
-use api::{
-    command_api_client::CommandApiClient, query_api_client::QueryApiClient, BuySideRequest,
-    InsertLimitBuyOrderRequest, InsertLimitSellOrderRequest, InsertMarketBuyOrderRequest,
-    InsertMarketSellOrderRequest, SellSideRequest,
-};
 use inquire::Select;
+use price::Price;
 use rand::{rngs::ThreadRng, Rng, RngCore};
 use tonic::transport::Channel;
 
-type Result<T> = anyhow::Result<T, anyhow::Error>;
-
-pub mod api {
-    tonic::include_proto!("api");
+mod api {
+    tonic::include_proto!("stream");
+    tonic::include_proto!("query");
+    tonic::include_proto!("command");
 }
+
+use self::api::{
+    command_api_client::CommandApiClient, query_api_client::QueryApiClient, BuySideRequest,
+    InsertLimitBuyOrderRequest, InsertLimitSellOrderRequest, InsertMarketBuyOrderRequest,
+    InsertMarketSellOrderRequest, OrderReply, SellSideRequest,
+};
+
+type Result<T> = anyhow::Result<T, anyhow::Error>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -30,7 +31,7 @@ async fn main() -> Result<()> {
         SelectOptions::LimitOrder => client.limit_order(client.order_direction()?).await?,
         SelectOptions::OrderClose => client.close_order().await?,
         SelectOptions::ListOrders => {
-            let orders = client.list_orders().await?;
+            let orders = client.list_orders(10).await?;
             if orders.is_empty() {
                 "Orderbook is empty".to_string()
             } else {
@@ -123,18 +124,43 @@ impl Client<ThreadRng> {
         Ok("Close order unimplemented on client side".to_string())
     }
 
-    async fn list_orders(&mut self) -> Result<String> {
+    async fn list_orders(&mut self, depth: u64) -> Result<String> {
         let asks = self
             .query_orderbook_client
-            .get_asks(tonic::Request::new(SellSideRequest { depth: 10 }))
-            .await;
+            .get_asks(tonic::Request::new(SellSideRequest { depth }))
+            .await?
+            .into_inner()
+            .orders;
+
         let bids = self
             .query_orderbook_client
-            .get_bids(tonic::Request::new(BuySideRequest { depth: 10 }))
-            .await;
+            .get_bids(tonic::Request::new(BuySideRequest { depth }))
+            .await?
+            .into_inner()
+            .orders;
 
-        Ok(format!("{asks:?}\n{bids:?}"))
+        Ok(display_orderbook(&bids, &asks))
     }
+}
+
+fn display_orderbook(bids: &[OrderReply], asks: &[OrderReply]) -> String {
+    if bids.is_empty() && asks.is_empty() {
+        return String::new();
+    }
+
+    format!(
+        "Buy:\n{}\nSell:\n{}",
+        display_price_levels(bids),
+        display_price_levels(asks)
+    )
+}
+
+fn display_price_levels(orders: &[OrderReply]) -> String {
+    orders
+        .iter()
+        .map(|order| format!("{}, {}", Price::from_ticks(order.price_ticks), order.qty))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -185,7 +211,15 @@ impl Display for SelectOptions {
 mod tests {
     use prost::Message;
 
-    use super::api::{InsertLimitBuyOrderRequest, OrderReply};
+    use super::{
+        api::{InsertLimitBuyOrderRequest, PriceReply},
+        display_orderbook,
+    };
+
+    #[test]
+    fn empty_orderbook_has_an_empty_display() {
+        assert!(display_orderbook(&[], &[]).is_empty());
+    }
 
     #[test]
     fn protobuf_round_trip_preserves_large_tick_values() {
@@ -199,11 +233,10 @@ mod tests {
         let decoded_request =
             InsertLimitBuyOrderRequest::decode(request.encode_to_vec().as_slice()).unwrap();
 
-        let reply = OrderReply {
+        let reply = PriceReply {
             price_ticks: decoded_request.price_ticks,
-            qty: decoded_request.qty,
         };
-        let decoded_reply = OrderReply::decode(reply.encode_to_vec().as_slice()).unwrap();
+        let decoded_reply = PriceReply::decode(reply.encode_to_vec().as_slice()).unwrap();
 
         assert_eq!(decoded_request.price_ticks, LARGE_PRICE_TICKS);
         assert_eq!(decoded_reply.price_ticks, LARGE_PRICE_TICKS);
