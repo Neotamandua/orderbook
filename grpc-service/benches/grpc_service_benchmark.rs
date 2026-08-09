@@ -1,11 +1,8 @@
 //! gRPC Benchmark
 
 use api::{
-    command_api_client::CommandApiClient,
-    InsertLimitBuyOrderRequest,
-    InsertLimitSellOrderRequest,
-    InsertMarketBuyOrderRequest,
-    InsertMarketSellOrderRequest,
+    command_api_client::CommandApiClient, InsertLimitBuyOrderRequest, InsertLimitSellOrderRequest,
+    InsertMarketBuyOrderRequest, InsertMarketSellOrderRequest,
 };
 use criterion::{criterion_group, criterion_main, Criterion};
 use rand::Rng;
@@ -27,7 +24,7 @@ async fn fill_and_match() -> Result<()> {
     let identifier = std::u64::MAX;
     for i in 1..10000 {
         let request = tonic::Request::new(InsertLimitBuyOrderRequest {
-            order_price: i as f32,
+            price_ticks: i * 100,
             identifier,
             qty: 500,
         });
@@ -40,7 +37,7 @@ async fn fill_and_match() -> Result<()> {
     // fill orderbook with more buys
     for i in 1..10000 {
         let request = tonic::Request::new(InsertLimitBuyOrderRequest {
-            order_price: i as f32 + (rng.gen_range(1..=90) as f32 / 100.0),
+            price_ticks: i * 100 + rng.gen_range(1..=90),
             identifier,
             qty: 500,
         });
@@ -52,7 +49,7 @@ async fn fill_and_match() -> Result<()> {
 
     for i in 1..10000 {
         let request = tonic::Request::new(InsertLimitSellOrderRequest {
-            order_price: i as f32 + 10000 as f32,
+            price_ticks: (i + 10_000) * 100,
             identifier,
             qty: 500,
         });

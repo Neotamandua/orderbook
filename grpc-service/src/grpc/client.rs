@@ -7,19 +7,12 @@
 //! This client is a simple CLI that allows the user to interact with the orderbook service
 
 use api::{
-    command_api_client::CommandApiClient,
-    query_api_client::QueryApiClient,
-    BuySideRequest,
-    ClosestOrderRequest,
-    InsertLimitBuyOrderRequest,
-    InsertLimitSellOrderRequest,
-    InsertMarketBuyOrderRequest,
-    InsertMarketSellOrderRequest,
-    InsertOrderReply,
-    SellSideRequest,
+    command_api_client::CommandApiClient, query_api_client::QueryApiClient, BuySideRequest,
+    InsertLimitBuyOrderRequest, InsertLimitSellOrderRequest, InsertMarketBuyOrderRequest,
+    InsertMarketSellOrderRequest, SellSideRequest,
 };
 use rand::{Rng, RngCore};
-use tonic::{transport::Channel, Response, Status};
+use tonic::transport::Channel;
 
 type Result<T> = anyhow::Result<T, anyhow::Error>;
 
@@ -56,13 +49,13 @@ async fn parse_input<R: RngCore>(
 ) -> Result<String> {
     // fetch user input from cli
     let mut input = String::new();
-    println!("Enter a command: ");
+    println!("Enter a command (limit prices are integer ticks): ");
     std::io::stdin().read_line(&mut input).unwrap();
 
     // parse user input
     let mut input = input.split_whitespace();
     let command = input.next().unwrap_or_default();
-    let order_price = input.next().unwrap_or_default();
+    let price_ticks = input.next().unwrap_or_default();
     let identifier: u64 = rng.gen_range(0..u64::MAX);
     let qty = input.next().unwrap_or_default();
 
@@ -81,7 +74,7 @@ async fn parse_input<R: RngCore>(
         }
         "limit buy" => {
             let request = tonic::Request::new(InsertLimitBuyOrderRequest {
-                order_price: order_price.parse::<f32>().unwrap_or_default(),
+                price_ticks: price_ticks.parse::<u64>().unwrap_or_default(),
                 identifier,
                 qty: qty.parse::<u64>().unwrap_or_default(),
             });
@@ -105,7 +98,7 @@ async fn parse_input<R: RngCore>(
         }
         "limit sell" => {
             let request = tonic::Request::new(InsertLimitSellOrderRequest {
-                order_price: order_price.parse::<f32>().unwrap_or_default(),
+                price_ticks: price_ticks.parse::<u64>().unwrap_or_default(),
                 identifier,
                 qty: qty.parse::<u64>().unwrap_or_default(),
             });
@@ -134,61 +127,29 @@ async fn parse_input<R: RngCore>(
 
 #[cfg(test)]
 mod tests {
-    use super::api::{
-        command_api_client::CommandApiClient,
-        query_api_client::QueryApiClient,
-        ClosestOrderRequest,
-        InsertLimitBuyOrderRequest,
-        InsertLimitSellOrderRequest,
-        InsertMarketBuyOrderRequest,
-        InsertMarketSellOrderRequest,
-    };
+    use prost::Message;
 
-    #[tokio::test]
-    async fn test_client() -> Result<(), Box<dyn std::error::Error>> {
-        let mut command_orderbook_client = CommandApiClient::connect("http://[::1]:50051").await?;
-        let mut query_orderbook_client = QueryApiClient::connect("http://[::1]:50051").await?;
+    use super::api::{InsertLimitBuyOrderRequest, OrderReply};
 
-        for i in 0..100 {
-            // Buy Order
-            let request = tonic::Request::new(InsertLimitBuyOrderRequest {
-                order_price: i as f32,
-                identifier: 1,
-                qty: 500,
-            });
+    #[test]
+    fn protobuf_round_trip_preserves_large_tick_values() {
+        const LARGE_PRICE_TICKS: u64 = 5_000_000;
 
-            let _ = command_orderbook_client
-                .insert_limit_buy_order(request)
-                .await?;
-        }
+        let request = InsertLimitBuyOrderRequest {
+            price_ticks: LARGE_PRICE_TICKS,
+            identifier: 1,
+            qty: 500,
+        };
+        let decoded_request =
+            InsertLimitBuyOrderRequest::decode(request.encode_to_vec().as_slice()).unwrap();
 
-        // check highest bid
-        let request = tonic::Request::new(ClosestOrderRequest {});
-        let response = query_orderbook_client.get_highest_bid(request).await;
-        println!("RESPONSE={:?}", response);
+        let reply = OrderReply {
+            price_ticks: decoded_request.price_ticks,
+            qty: decoded_request.qty,
+        };
+        let decoded_reply = OrderReply::decode(reply.encode_to_vec().as_slice()).unwrap();
 
-        for i in (50..100).rev() {
-            // Sell Order
-            let request = tonic::Request::new(InsertMarketSellOrderRequest {
-                identifier: 1,
-                qty: 500,
-            });
-
-            let _ = command_orderbook_client
-                .insert_market_sell_order(request)
-                .await?;
-        }
-
-        // check highest bid
-        let request = tonic::Request::new(ClosestOrderRequest {});
-        let response = query_orderbook_client.get_highest_bid(request).await;
-        println!("RESPONSE={:?}", response);
-
-        // check lowest ask
-        let request = tonic::Request::new(ClosestOrderRequest {});
-        let response = query_orderbook_client.get_lowest_ask(request).await;
-        println!("RESPONSE={:?}", response);
-
-        Ok(())
+        assert_eq!(decoded_request.price_ticks, LARGE_PRICE_TICKS);
+        assert_eq!(decoded_reply.price_ticks, LARGE_PRICE_TICKS);
     }
 }

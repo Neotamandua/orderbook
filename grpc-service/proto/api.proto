@@ -25,20 +25,20 @@ message ClosestOrderRequest {
 }
 
 message OrderReply {
-  float order_price = 1;
+  uint64 price_ticks = 1;
   uint64 qty = 2;
 }
 
 // GTC Limit Buy Order
 message InsertLimitBuyOrderRequest {
-  float order_price = 2;
+  uint64 price_ticks = 2;
   uint64 identifier = 3;
   uint64 qty = 4;
 }
 
 // GTC Limit Sell Order
 message InsertLimitSellOrderRequest {
-  float order_price = 2;
+  uint64 price_ticks = 2;
   uint64 identifier = 3;
   uint64 qty = 4;
 }
@@ -59,7 +59,7 @@ message InsertOrderReply {
 
 // Remove Order
 message RemoveOrderRequest {
-  float order_price = 1;
+  uint64 price_ticks = 1;
   uint64 identifier = 2;
 }
 

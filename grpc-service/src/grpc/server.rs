@@ -24,34 +24,13 @@ pub mod api {
 use orderbook_x::{
     orderbook::{IdentifiableOrder, Order, OrderBook},
     price::Price,
-    traits::matching_engine::{MatchingEngine, OrderType},
+    traits::matching_engine::MatchingEngine,
 };
 
 use self::api::{
     BuySideRequest, InsertLimitBuyOrderRequest, InsertLimitSellOrderRequest,
     InsertMarketBuyOrderRequest, InsertMarketSellOrderRequest, SellSideRequest,
 };
-
-fn request_price(value: f32) -> Result<Price, Status> {
-    Price::try_from(value)
-        .map_err(|error| Status::invalid_argument(format!("invalid order price: {error}")))
-}
-
-#[cfg(test)]
-mod price_tests {
-    use super::*;
-
-    #[test]
-    fn accepts_tick_aligned_request_prices() {
-        assert_eq!(request_price(2.01).unwrap(), Price::from_ticks(201));
-    }
-
-    #[test]
-    fn rejects_off_tick_request_prices() {
-        let status = request_price(1.999).unwrap_err();
-        assert_eq!(status.code(), tonic::Code::InvalidArgument);
-    }
-}
 
 #[derive(Debug, Default)]
 pub struct OrderBookApi {
@@ -67,12 +46,12 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         // Get underlying request data
         let limit_buy_order_request = request.into_inner();
 
-        let order_price = request_price(limit_buy_order_request.order_price)?;
+        let price = Price::from_ticks(limit_buy_order_request.price_ticks);
         let identifier = limit_buy_order_request.identifier;
         let qty = limit_buy_order_request.qty;
 
         let identifiable_order = IdentifiableOrder::new(identifier, qty);
-        let order = Order::new(order_price, identifiable_order);
+        let order = Order::new(price, identifiable_order);
         {
             let mut orderbook_api = self.write().unwrap();
 
@@ -91,17 +70,17 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         // Get underlying request data
         let market_buy_order_request = request.into_inner();
 
-        let order_price = Price::MAX;
+        let price = Price::MAX;
         let identifier = market_buy_order_request.identifier;
         let qty = market_buy_order_request.qty;
 
         let identifiable_order = IdentifiableOrder::new(identifier, qty);
-        let order = Order::new(order_price, identifiable_order);
+        let order = Order::new(price, identifiable_order);
         {
             let mut orderbook_api = self.write().unwrap();
 
             // Market Buy
-            let result = orderbook_api.orderbook.market_buy_until(order);
+            let _ = orderbook_api.orderbook.market_buy_until(order);
         }
         let reply = InsertOrderReply { success: true };
         Ok(tonic::Response::new(reply))
@@ -114,12 +93,12 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         // Get underlying request data
         let limit_sell_order_request = request.into_inner();
 
-        let order_price = request_price(limit_sell_order_request.order_price)?;
+        let price = Price::from_ticks(limit_sell_order_request.price_ticks);
         let identifier = limit_sell_order_request.identifier;
         let qty = limit_sell_order_request.qty;
 
         let identifiable_order = IdentifiableOrder::new(identifier, qty);
-        let order = Order::new(order_price, identifiable_order);
+        let order = Order::new(price, identifiable_order);
         {
             let mut orderbook_api = self.write().unwrap();
             // ToDo: provide function to insert limit sell order without matching if services before can make sure no matching happens
@@ -140,14 +119,14 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         let market_sell_order_request = request.into_inner();
 
         // ToDo: Make this settable in the future in config
-        // 0.0 for market sell order because it will be matched with the highest bid and subsequent bids
-        let order_price = Price::ZERO;
+        // Zero ticks for a market sell because it matches the highest bid and subsequent bids.
+        let price = Price::ZERO;
 
         let identifier = market_sell_order_request.identifier;
         let qty = market_sell_order_request.qty;
 
         let identifiable_order = IdentifiableOrder::new(identifier, qty);
-        let order = Order::new(order_price, identifiable_order);
+        let order = Order::new(price, identifiable_order);
         {
             let mut orderbook_api = self.write().unwrap();
             orderbook_api.orderbook.market_sell_until(order);
@@ -165,11 +144,11 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
     ) -> Result<Response<RemoveOrderReply>, Status> {
         // Access request message using `request.into_inner()`
         let remove_order_request = request.into_inner();
-        let order_price = request_price(remove_order_request.order_price)?;
+        let price = Price::from_ticks(remove_order_request.price_ticks);
         let identifier = remove_order_request.identifier;
 
         let identifiable_order = IdentifiableOrder::new(identifier, 0);
-        let order = Order::new(order_price, identifiable_order);
+        let order = Order::new(price, identifiable_order);
 
         {
             let mut orderbook_api = self.write().unwrap();
@@ -188,11 +167,11 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
     ) -> Result<Response<RemoveOrderReply>, Status> {
         // Access request message using `request.into_inner()`
         let remove_order_request = request.into_inner();
-        let order_price = request_price(remove_order_request.order_price)?;
+        let price = Price::from_ticks(remove_order_request.price_ticks);
         let identifier = remove_order_request.identifier;
 
         let identifiable_order = IdentifiableOrder::new(identifier, 0);
-        let order = Order::new(order_price, identifiable_order);
+        let order = Order::new(price, identifiable_order);
 
         {
             let mut orderbook_api = self.write().unwrap();
@@ -210,7 +189,7 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
 impl QueryApi for Arc<RwLock<OrderBookApi>> {
     async fn get_lowest_ask(
         &self,
-        request: Request<ClosestOrderRequest>,
+        _request: Request<ClosestOrderRequest>,
     ) -> Result<Response<OrderReply>, Status> {
         {
             let orderbook_api = self.read().unwrap();
@@ -222,7 +201,7 @@ impl QueryApi for Arc<RwLock<OrderBookApi>> {
                 }
 
                 return Ok(tonic::Response::new(OrderReply {
-                    order_price: f32::from(*price),
+                    price_ticks: price.ticks(),
                     qty,
                 }));
             } else {
@@ -233,7 +212,7 @@ impl QueryApi for Arc<RwLock<OrderBookApi>> {
 
     async fn get_highest_bid(
         &self,
-        request: Request<ClosestOrderRequest>,
+        _request: Request<ClosestOrderRequest>,
     ) -> Result<Response<OrderReply>, Status> {
         {
             let orderbook_api = self.read().unwrap();
@@ -245,7 +224,7 @@ impl QueryApi for Arc<RwLock<OrderBookApi>> {
                 }
 
                 return Ok(tonic::Response::new(OrderReply {
-                    order_price: f32::from(*price),
+                    price_ticks: price.ticks(),
                     qty,
                 }));
             } else {
@@ -256,16 +235,94 @@ impl QueryApi for Arc<RwLock<OrderBookApi>> {
 
     async fn get_bids(
         &self,
-        request: Request<BuySideRequest>,
+        _request: Request<BuySideRequest>,
     ) -> Result<Response<OrderbookReply>, Status> {
         unimplemented!("Not implemented")
     }
 
     async fn get_asks(
         &self,
-        request: Request<SellSideRequest>,
+        _request: Request<SellSideRequest>,
     ) -> Result<Response<OrderbookReply>, Status> {
         unimplemented!("Not implemented")
+    }
+}
+
+#[cfg(test)]
+mod price_tests {
+    use super::*;
+
+    fn service() -> Arc<RwLock<OrderBookApi>> {
+        Arc::new(RwLock::new(OrderBookApi::default()))
+    }
+
+    async fn insert_limit_buy(service: &Arc<RwLock<OrderBookApi>>, price_ticks: u64) {
+        service
+            .insert_limit_buy_order(Request::new(InsertLimitBuyOrderRequest {
+                price_ticks,
+                identifier: price_ticks,
+                qty: 1,
+            }))
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn command_processing_uses_submitted_ticks_directly() {
+        let service = service();
+
+        insert_limit_buy(&service, 199).await;
+        assert_eq!(
+            service.read().unwrap().orderbook.highest_bid().unwrap().0,
+            &Price::from_ticks(199)
+        );
+
+        insert_limit_buy(&service, 200).await;
+        assert_eq!(
+            service.read().unwrap().orderbook.highest_bid().unwrap().0,
+            &Price::from_ticks(200)
+        );
+    }
+
+    #[tokio::test]
+    async fn query_returns_the_exact_submitted_tick_value() {
+        let service = service();
+        insert_limit_buy(&service, 12_345).await;
+
+        let reply = service
+            .get_highest_bid(Request::new(ClosestOrderRequest {}))
+            .await
+            .unwrap()
+            .into_inner();
+
+        assert_eq!(reply.price_ticks, 12_345);
+        assert_eq!(Price::from_ticks(reply.price_ticks).to_string(), "123.45");
+    }
+
+    #[tokio::test]
+    async fn large_price_round_trip_preserves_every_tick() {
+        const LARGE_PRICE_TICKS: u64 = 5_000_000;
+
+        let service = service();
+        insert_limit_buy(&service, LARGE_PRICE_TICKS).await;
+
+        let internal_ticks = service
+            .read()
+            .unwrap()
+            .orderbook
+            .highest_bid()
+            .unwrap()
+            .0
+            .ticks();
+        let returned_ticks = service
+            .get_highest_bid(Request::new(ClosestOrderRequest {}))
+            .await
+            .unwrap()
+            .into_inner()
+            .price_ticks;
+
+        assert_eq!(internal_ticks, LARGE_PRICE_TICKS);
+        assert_eq!(returned_ticks, LARGE_PRICE_TICKS);
     }
 }
 
