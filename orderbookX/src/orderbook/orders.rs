@@ -43,7 +43,7 @@ impl Order {
 type Orders = IndexMap<Price, VecDeque<IdentifiableOrder>>;
 
 /// OrderList represents sell-side or buy-side for a specific financial instrument.
-/// It uses an IndexMap data structure [Orders] where the keys are prices (f64) for orders and the values are vectors (Vec) of orders (IdentifiableOrder) at that price.
+/// It uses an IndexMap data structure [Orders] where the keys are canonical tick prices and the values are vectors (Vec) of orders (IdentifiableOrder) at that price.
 /// The vector is a time priority list for orders at the given price, where the first element is the first order to be matched.
 /// Together with the price as a key in the IndexMap, two OrderList result in a price/time priority orderbook
 #[derive(Default, Debug)]

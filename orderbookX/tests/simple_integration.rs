@@ -29,11 +29,17 @@ fn simple_integration() {
 
     // Insert limit buy orders
     order_book.insert_limit_buy(Order::new(
-        Price::new(1, 211),
+        Price::from_ticks(121),
         IdentifiableOrder::new(1, 50),
     ));
-    order_book.insert_limit_buy(Order::new(Price::new(1, 0), IdentifiableOrder::new(2, 50)));
-    order_book.insert_limit_buy(Order::new(Price::new(2, 0), IdentifiableOrder::new(3, 50)));
+    order_book.insert_limit_buy(Order::new(
+        Price::from_ticks(100),
+        IdentifiableOrder::new(2, 50),
+    ));
+    order_book.insert_limit_buy(Order::new(
+        Price::from_ticks(200),
+        IdentifiableOrder::new(3, 50),
+    ));
 
     trace!("Orderbook After Buy Order Insertion:\n{}", order_book);
     trace!(
@@ -42,9 +48,15 @@ fn simple_integration() {
     );
 
     // Insert limit sell orders
-    order_book.insert_limit_sell(Order::new(Price::new(2, 0), IdentifiableOrder::new(4, 60)));
+    order_book.insert_limit_sell(Order::new(
+        Price::from_ticks(200),
+        IdentifiableOrder::new(4, 60),
+    ));
 
-    order_book.insert_limit_sell(Order::new(Price::new(6, 0), IdentifiableOrder::new(4, 60)));
+    order_book.insert_limit_sell(Order::new(
+        Price::from_ticks(600),
+        IdentifiableOrder::new(4, 60),
+    ));
     trace!("Orderbook After Sell Order Insertion:\n{}", order_book);
     trace!(
         "Amount of open orders: {}",
@@ -52,7 +64,10 @@ fn simple_integration() {
     );
 
     // Insert single limit buy order again
-    order_book.insert_limit_buy(Order::new(Price::new(5, 0), IdentifiableOrder::new(4, 60)));
+    order_book.insert_limit_buy(Order::new(
+        Price::from_ticks(500),
+        IdentifiableOrder::new(4, 60),
+    ));
 
     trace!("Orderbook After Buy Order Insertion:\n{}", order_book);
     trace!(

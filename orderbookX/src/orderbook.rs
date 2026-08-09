@@ -44,9 +44,18 @@ impl OrderBook {
     pub fn create_test_orderbook() -> Self {
         let mut order_book = OrderBook::default();
 
-        order_book.insert_buy_order(Order::new(Price::new(1, 0), IdentifiableOrder::new(1, 50)));
-        order_book.insert_buy_order(Order::new(Price::new(2, 0), IdentifiableOrder::new(2, 50)));
-        order_book.insert_sell_order(Order::new(Price::new(3, 0), IdentifiableOrder::new(3, 50)));
+        order_book.insert_buy_order(Order::new(
+            Price::from_ticks(100),
+            IdentifiableOrder::new(1, 50),
+        ));
+        order_book.insert_buy_order(Order::new(
+            Price::from_ticks(200),
+            IdentifiableOrder::new(2, 50),
+        ));
+        order_book.insert_sell_order(Order::new(
+            Price::from_ticks(300),
+            IdentifiableOrder::new(3, 50),
+        ));
         order_book
     }
 }
@@ -589,8 +598,8 @@ mod tests {
 
     proptest! {
        #[test]
-       fn test_order_book(qty: u32, main_unit: u32, sub_unit: u8) {
-            let order_book = fill_bids_pseudorandom();
+       fn test_order_book(_qty: u32, _ticks: u64) {
+            let _order_book = fill_bids_pseudorandom();
        }
     }
 
@@ -601,12 +610,12 @@ mod tests {
         let mut rng = rand::thread_rng();
 
         for _ in 0..1000 {
-            let price = rng.gen_range(1..=100) as f64;
+            let price = rng.gen_range(1..=100_u64);
             let mut hasher = DefaultHasher::new();
-            hasher.write_i64(price as i64);
+            hasher.write_u64(price);
             let qty = hasher.finish() % 250_000;
             let identifiable_order = IdentifiableOrder::new(1, qty);
-            let order = Order::new(price.into(), identifiable_order);
+            let order = Order::new(Price::from_ticks(price * 100), identifiable_order);
             remove_list.push(order.clone());
             bid_list.insert_order(order);
         }
@@ -621,12 +630,12 @@ mod tests {
         let mut rng = rand::thread_rng();
 
         for _ in 0..1000 {
-            let price = rng.gen_range(1..=100) as f64;
+            let price = rng.gen_range(1..=100_u64);
             let mut hasher = DefaultHasher::new();
-            hasher.write_i64(price as i64);
+            hasher.write_u64(price);
             let qty = hasher.finish() % 250_000;
             let identifiable_order = IdentifiableOrder::new(1, qty);
-            let order = Order::new(price.into(), identifiable_order);
+            let order = Order::new(Price::from_ticks(price * 100), identifiable_order);
             remove_list.push(order.clone());
             ask_list.insert_order(order);
         }
@@ -640,12 +649,12 @@ mod tests {
         let mut rng = rand::thread_rng();
 
         for _ in 0..amount {
-            let price = rng.gen_range(1..=100) as f64;
+            let price = rng.gen_range(1..=100_u64);
             let mut hasher = DefaultHasher::new();
-            hasher.write_i64(price as i64);
+            hasher.write_u64(price);
             let qty = hasher.finish() % 250_000;
             let identifiable_order = IdentifiableOrder::new(1, qty);
-            let order = Order::new(price.into(), identifiable_order);
+            let order = Order::new(Price::from_ticks(price * 100), identifiable_order);
             orders.push(order);
         }
 
@@ -659,6 +668,36 @@ mod tests {
         assert_eq!(buy_side.order_list.len(), 100);
         let (sell_side, _) = fill_asks_pseudorandom();
         assert_eq!(sell_side.order_list.len(), 100);
+    }
+
+    #[test]
+    fn decimal_boundary_prices_sort_and_match_in_numerical_order() {
+        let prices = [
+            Price::try_from(1.99).unwrap(),
+            Price::try_from(2.00).unwrap(),
+            Price::try_from(2.01).unwrap(),
+        ];
+        let mut order_book = OrderBook::default();
+
+        for price in prices.into_iter().rev() {
+            order_book.insert_sell_order(Order::new(price, IdentifiableOrder::new(1, 1)));
+        }
+
+        assert_eq!(
+            order_book
+                .asks
+                .order_list
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            prices
+        );
+
+        order_book.market_buy(Order::new(Price::MAX, IdentifiableOrder::new(2, 1)));
+        assert_eq!(
+            order_book.lowest_ask().map(|(price, _)| *price),
+            Some(prices[1])
+        );
     }
 
     #[test]
@@ -745,7 +784,7 @@ mod tests {
         let (sell_side, _) = fill_asks_pseudorandom();
         let mut order_book = OrderBook::new(OrderList::default(), sell_side);
         let identifiable_order = IdentifiableOrder::new(5, 512);
-        let result = order_book.market_buy(Order::new(Price::new(1, 0), identifiable_order));
+        let result = order_book.market_buy(Order::new(Price::from_ticks(100), identifiable_order));
         assert_eq!(result, (true, 512, 512));
     }
 
@@ -755,15 +794,15 @@ mod tests {
         let mut order_book = OrderBook::default();
         // Fill orderbook
         for i in 1..=10 {
-            let price = Price::new(i, 0);
+            let price = Price::from_ticks(i * 100);
             let qty = 100;
             let identifiable_order = IdentifiableOrder::new(1, qty);
-            let order = Order::new(price.into(), identifiable_order);
+            let order = Order::new(price, identifiable_order);
             order_book.insert_sell_order(order);
         }
 
         let identifiable_order = IdentifiableOrder::new(5, 512);
-        let result = order_book.market_buy(Order::new(Price::new(1, 0), identifiable_order));
+        let result = order_book.market_buy(Order::new(Price::from_ticks(100), identifiable_order));
         assert_eq!(result, (true, 512, 512));
     }
 
@@ -773,15 +812,15 @@ mod tests {
         let mut order_book = OrderBook::default();
         // Fill orderbook
         for i in 1..=5 {
-            let price = Price::new(i, 0);
+            let price = Price::from_ticks(i * 100);
             let qty = 100;
             let identifiable_order = IdentifiableOrder::new(1, qty);
-            let order = Order::new(price.into(), identifiable_order);
+            let order = Order::new(price, identifiable_order);
             order_book.insert_sell_order(order);
         }
 
         let identifiable_order = IdentifiableOrder::new(5, 500);
-        let result = order_book.market_buy(Order::new(Price::new(1, 0), identifiable_order));
+        let result = order_book.market_buy(Order::new(Price::from_ticks(100), identifiable_order));
         assert_eq!(result, (true, 500, 500));
     }
 
@@ -791,15 +830,15 @@ mod tests {
         let mut order_book = OrderBook::default();
         // Fill orderbook
         for i in 1..=5 {
-            let price = Price::new(i, 0);
+            let price = Price::from_ticks(i * 100);
             let qty = 100;
             let identifiable_order = IdentifiableOrder::new(1, qty);
-            let order = Order::new(price.into(), identifiable_order);
+            let order = Order::new(price, identifiable_order);
             order_book.insert_sell_order(order);
         }
 
         let identifiable_order = IdentifiableOrder::new(5, 512);
-        let result = order_book.market_buy(Order::new(Price::new(1, 0), identifiable_order));
+        let result = order_book.market_buy(Order::new(Price::from_ticks(100), identifiable_order));
         assert_eq!(result, (true, 512, 500));
     }
 
@@ -808,7 +847,7 @@ mod tests {
     fn test_market_buy_empty_book() {
         let mut order_book = OrderBook::default();
         let identifiable_order = IdentifiableOrder::new(5, 512);
-        let result = order_book.market_buy(Order::new(Price::new(1, 0), identifiable_order));
+        let result = order_book.market_buy(Order::new(Price::from_ticks(100), identifiable_order));
         assert_eq!(result, (false, 512, 0));
     }
 
@@ -822,7 +861,7 @@ mod tests {
         let (buy_side, _) = fill_bids_pseudorandom();
         let mut order_book = OrderBook::new(buy_side, OrderList::default());
         let identifiable_order = IdentifiableOrder::new(5, 512);
-        let result = order_book.market_sell(Order::new(Price::new(1, 0), identifiable_order));
+        let result = order_book.market_sell(Order::new(Price::from_ticks(100), identifiable_order));
         assert_eq!(result, (true, 512, 512));
     }
 
@@ -832,15 +871,15 @@ mod tests {
         let mut order_book = OrderBook::default();
         // Fill orderbook
         for i in 1..=10 {
-            let price = Price::new(i, 0);
+            let price = Price::from_ticks(i * 100);
             let qty = 100;
             let identifiable_order = IdentifiableOrder::new(1, qty);
-            let order = Order::new(price.into(), identifiable_order);
+            let order = Order::new(price, identifiable_order);
             order_book.insert_buy_order(order);
         }
 
         let identifiable_order = IdentifiableOrder::new(5, 512);
-        let result = order_book.market_sell(Order::new(Price::new(1, 0), identifiable_order));
+        let result = order_book.market_sell(Order::new(Price::from_ticks(100), identifiable_order));
         assert_eq!(result, (true, 512, 512));
     }
 
@@ -851,15 +890,15 @@ mod tests {
         let mut order_book = OrderBook::default();
         // Fill orderbook
         for i in 1..=5 {
-            let price = Price::new(i, 0);
+            let price = Price::from_ticks(i * 100);
             let qty = 100;
             let identifiable_order = IdentifiableOrder::new(1, qty);
-            let order = Order::new(price.into(), identifiable_order);
+            let order = Order::new(price, identifiable_order);
             order_book.insert_buy_order(order);
         }
         debug!("Created Orderbook: {:?}", order_book);
         let identifiable_order = IdentifiableOrder::new(5, 500);
-        let result = order_book.market_sell(Order::new(Price::new(1, 0), identifiable_order));
+        let result = order_book.market_sell(Order::new(Price::from_ticks(100), identifiable_order));
         assert_eq!(result, (true, 500, 500));
     }
 
@@ -869,15 +908,15 @@ mod tests {
         let mut order_book = OrderBook::default();
         // Fill orderbook
         for i in 1..=5 {
-            let price = Price::new(i, 0);
+            let price = Price::from_ticks(i * 100);
             let qty = 100;
             let identifiable_order = IdentifiableOrder::new(1, qty);
-            let order = Order::new(price.into(), identifiable_order);
+            let order = Order::new(price, identifiable_order);
             order_book.insert_buy_order(order);
         }
 
         let identifiable_order = IdentifiableOrder::new(5, 512);
-        let result = order_book.market_sell(Order::new(Price::new(1, 0), identifiable_order));
+        let result = order_book.market_sell(Order::new(Price::from_ticks(100), identifiable_order));
         assert_eq!(result, (true, 512, 500));
     }
 
@@ -886,7 +925,7 @@ mod tests {
     fn test_market_sell_empty_book() {
         let mut order_book = OrderBook::default();
         let identifiable_order = IdentifiableOrder::new(5, 512);
-        let result = order_book.market_sell(Order::new(Price::new(1, 0), identifiable_order));
+        let result = order_book.market_sell(Order::new(Price::from_ticks(100), identifiable_order));
         assert_eq!(result, (false, 512, 0));
     }
 }

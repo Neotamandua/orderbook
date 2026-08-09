@@ -13,11 +13,7 @@ use std::sync::{Arc, RwLock};
 use api::{
     command_api_server::{CommandApi, CommandApiServer},
     query_api_server::{QueryApi, QueryApiServer},
-    ClosestOrderRequest,
-    InsertOrderReply,
-    OrderReply,
-    OrderbookReply,
-    RemoveOrderReply,
+    ClosestOrderRequest, InsertOrderReply, OrderReply, OrderbookReply, RemoveOrderReply,
     RemoveOrderRequest,
 };
 use tonic::{transport::Server, Request, Response, Status};
@@ -27,17 +23,35 @@ pub mod api {
 
 use orderbook_x::{
     orderbook::{IdentifiableOrder, Order, OrderBook},
+    price::Price,
     traits::matching_engine::{MatchingEngine, OrderType},
 };
 
 use self::api::{
-    BuySideRequest,
-    InsertLimitBuyOrderRequest,
-    InsertLimitSellOrderRequest,
-    InsertMarketBuyOrderRequest,
-    InsertMarketSellOrderRequest,
-    SellSideRequest,
+    BuySideRequest, InsertLimitBuyOrderRequest, InsertLimitSellOrderRequest,
+    InsertMarketBuyOrderRequest, InsertMarketSellOrderRequest, SellSideRequest,
 };
+
+fn request_price(value: f32) -> Result<Price, Status> {
+    Price::try_from(value)
+        .map_err(|error| Status::invalid_argument(format!("invalid order price: {error}")))
+}
+
+#[cfg(test)]
+mod price_tests {
+    use super::*;
+
+    #[test]
+    fn accepts_tick_aligned_request_prices() {
+        assert_eq!(request_price(2.01).unwrap(), Price::from_ticks(201));
+    }
+
+    #[test]
+    fn rejects_off_tick_request_prices() {
+        let status = request_price(1.999).unwrap_err();
+        assert_eq!(status.code(), tonic::Code::InvalidArgument);
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct OrderBookApi {
@@ -53,7 +67,7 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         // Get underlying request data
         let limit_buy_order_request = request.into_inner();
 
-        let order_price = limit_buy_order_request.order_price.into();
+        let order_price = request_price(limit_buy_order_request.order_price)?;
         let identifier = limit_buy_order_request.identifier;
         let qty = limit_buy_order_request.qty;
 
@@ -77,7 +91,7 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         // Get underlying request data
         let market_buy_order_request = request.into_inner();
 
-        let order_price = f64::MAX.into();
+        let order_price = Price::MAX;
         let identifier = market_buy_order_request.identifier;
         let qty = market_buy_order_request.qty;
 
@@ -100,7 +114,7 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
         // Get underlying request data
         let limit_sell_order_request = request.into_inner();
 
-        let order_price = limit_sell_order_request.order_price.into();
+        let order_price = request_price(limit_sell_order_request.order_price)?;
         let identifier = limit_sell_order_request.identifier;
         let qty = limit_sell_order_request.qty;
 
@@ -127,7 +141,7 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
 
         // ToDo: Make this settable in the future in config
         // 0.0 for market sell order because it will be matched with the highest bid and subsequent bids
-        let order_price = 0.0.into();
+        let order_price = Price::ZERO;
 
         let identifier = market_sell_order_request.identifier;
         let qty = market_sell_order_request.qty;
@@ -151,7 +165,7 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
     ) -> Result<Response<RemoveOrderReply>, Status> {
         // Access request message using `request.into_inner()`
         let remove_order_request = request.into_inner();
-        let order_price = remove_order_request.order_price.into();
+        let order_price = request_price(remove_order_request.order_price)?;
         let identifier = remove_order_request.identifier;
 
         let identifiable_order = IdentifiableOrder::new(identifier, 0);
@@ -174,7 +188,7 @@ impl CommandApi for Arc<RwLock<OrderBookApi>> {
     ) -> Result<Response<RemoveOrderReply>, Status> {
         // Access request message using `request.into_inner()`
         let remove_order_request = request.into_inner();
-        let order_price = remove_order_request.order_price.into();
+        let order_price = request_price(remove_order_request.order_price)?;
         let identifier = remove_order_request.identifier;
 
         let identifiable_order = IdentifiableOrder::new(identifier, 0);
