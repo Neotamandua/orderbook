@@ -1,9 +1,9 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use orderbook_x::{
     orderbook::{IdentifiableOrder, Order, OrderBook},
-    price::Price,
-    traits::matching_engine::MatchingEngine,
+    traits::matching_engine::Orders,
 };
+use price::Price;
 use rand::Rng;
 
 fn fill_and_match() {
@@ -60,20 +60,30 @@ fn orderbook_bench(c: &mut Criterion) {
 }
 
 fn simple_buy_insert(c: &mut Criterion) {
-    let order = Order::new(Price::from_ticks(10_000), IdentifiableOrder::default());
+    let price = Price::from_ticks(10_000);
+    let mut identifier = 0;
     let mut orderbook = OrderBook::default();
 
     c.bench_function("insert_buy_order", |b| {
-        b.iter(|| orderbook.insert_limit_buy(order.clone()))
+        b.iter(|| {
+            identifier += 1;
+            let order = Order::new(price, IdentifiableOrder::new(identifier, 1));
+            orderbook.insert_limit_buy(order)
+        })
     });
 }
 
 fn simple_sell_insert(c: &mut Criterion) {
-    let order = Order::new(Price::from_ticks(10_000), IdentifiableOrder::default());
+    let price = Price::from_ticks(10_000);
+    let mut identifier = 0;
     let mut orderbook = OrderBook::default();
 
     c.bench_function("insert_sell_order", |b| {
-        b.iter(|| orderbook.insert_limit_sell(order.clone()))
+        b.iter(|| {
+            identifier += 1;
+            let order = Order::new(price, IdentifiableOrder::new(identifier, 1));
+            orderbook.insert_limit_sell(order)
+        })
     });
 }
 

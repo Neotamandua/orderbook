@@ -9,7 +9,7 @@ use rand::Rng;
 type Result<T> = anyhow::Result<T, anyhow::Error>;
 
 pub mod api {
-    tonic::include_proto!("api");
+    tonic::include_proto!("command");
 }
 
 async fn fill_and_match() -> Result<()> {

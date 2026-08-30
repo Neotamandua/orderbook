@@ -1,0 +1,58 @@
+// version of protocol buffer used
+syntax = "proto3";
+
+// package name for the buffer will be used later
+package command;
+
+service CommandApi {
+    // Update Orderbook Actions
+    /*
+    Limit Order Types is GTC (Good Till Cancelled) currently.
+    Fill or Kill (FOK) - not supported yet
+    Immediate or Cancel (IOC) - not supported yet
+    */
+    rpc InsertMarketBuyOrder (InsertMarketBuyOrderRequest) returns (InsertOrderReply);
+    rpc InsertMarketSellOrder (InsertMarketSellOrderRequest) returns (InsertOrderReply);
+    rpc InsertLimitBuyOrder (InsertLimitBuyOrderRequest) returns (InsertOrderReply);
+    rpc RemoveBuyOrder (RemoveOrderRequest) returns (RemoveOrderReply);
+    rpc InsertLimitSellOrder (InsertLimitSellOrderRequest) returns (InsertOrderReply);
+    rpc RemoveSellOrder (RemoveOrderRequest) returns (RemoveOrderReply);
+  }
+
+  // GTC Limit Buy Order
+  message InsertLimitBuyOrderRequest {
+    uint64 price_ticks = 2;
+    uint64 identifier = 3;
+    uint64 qty = 4;
+  }
+
+  // GTC Limit Sell Order
+  message InsertLimitSellOrderRequest {
+    uint64 price_ticks = 2;
+    uint64 identifier = 3;
+    uint64 qty = 4;
+  }
+
+  message InsertMarketBuyOrderRequest {
+    uint64 identifier = 1;
+    uint64 qty = 2;
+  }
+
+  message InsertMarketSellOrderRequest {
+    uint64 identifier = 1;
+    uint64 qty = 2;
+  }
+
+  message InsertOrderReply {
+    bool success = 1;
+  }
+
+  // Remove Order
+  message RemoveOrderRequest {
+    uint64 price_ticks = 1;
+    uint64 identifier = 2;
+  }
+
+  message RemoveOrderReply {
+    bool success = 1;
+  }

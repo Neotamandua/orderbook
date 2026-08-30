@@ -1,127 +1,209 @@
-//! gRPC example client for the orderbook service
-//!
-//! Normally this would be it's own application, but for simplicity it's included here as a test client for reference
-//! This could be (multiple) backend services that would be used by a frontend application
-//! The backend services may use some message queue to communicate with each other and ingest data e.g., kafka or rabbitmq
-//!
-//! This client is a simple CLI that allows the user to interact with the orderbook service
+//! Interactive gRPC example client for the orderbook service.
 
-use api::{
+use std::fmt::{Display, Formatter, Result as FmtResult};
+
+use inquire::Select;
+use price::Price;
+use rand::{rngs::ThreadRng, Rng, RngCore};
+use tonic::transport::Channel;
+
+mod api {
+    tonic::include_proto!("stream");
+    tonic::include_proto!("query");
+    tonic::include_proto!("command");
+}
+
+use self::api::{
     command_api_client::CommandApiClient, query_api_client::QueryApiClient, BuySideRequest,
     InsertLimitBuyOrderRequest, InsertLimitSellOrderRequest, InsertMarketBuyOrderRequest,
-    InsertMarketSellOrderRequest, SellSideRequest,
+    InsertMarketSellOrderRequest, OrderReply, SellSideRequest,
 };
-use rand::{Rng, RngCore};
-use tonic::transport::Channel;
 
 type Result<T> = anyhow::Result<T, anyhow::Error>;
 
-pub mod api {
-    tonic::include_proto!("api");
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    let mut command_orderbook_client = CommandApiClient::connect("http://[::1]:50051").await?;
-    let mut query_orderbook_client = QueryApiClient::connect("http://[::1]:50051").await?;
+    let mut client = Client::build().await?;
+    let select = Select::new("Desired Action", SelectOptions::VARIANTS.to_vec()).prompt()?;
 
-    // Prepare prerequisites for order
-    let mut rng = rand::thread_rng();
+    let answer = match select {
+        SelectOptions::MarketOrder => client.market_order(client.order_direction()?).await?,
+        SelectOptions::LimitOrder => client.limit_order(client.order_direction()?).await?,
+        SelectOptions::OrderClose => client.close_order().await?,
+        SelectOptions::ListOrders => {
+            let orders = client.list_orders(10).await?;
+            if orders.is_empty() {
+                "Orderbook is empty".to_string()
+            } else {
+                orders
+            }
+        }
+    };
 
-    // Ask for user input as often as possible
-    loop {
-        let result = parse_input(
-            &mut command_orderbook_client,
-            &mut query_orderbook_client,
-            &mut rng,
-        )
-        .await;
+    println!("{answer}");
+    Ok(())
+}
 
-        println!("RESPONSE={:?}", result);
+struct Client<R: RngCore> {
+    command_orderbook_client: CommandApiClient<Channel>,
+    query_orderbook_client: QueryApiClient<Channel>,
+    rng: R,
+}
+
+impl Client<ThreadRng> {
+    async fn build() -> Result<Self> {
+        let command_orderbook_client = CommandApiClient::connect("http://[::1]:50051").await?;
+        let query_orderbook_client = QueryApiClient::connect("http://[::1]:50051").await?;
+
+        Ok(Self {
+            command_orderbook_client,
+            query_orderbook_client,
+            rng: rand::thread_rng(),
+        })
+    }
+
+    fn order_direction(&self) -> Result<Direction> {
+        Ok(Select::new("Order Type", Direction::VARIANTS.to_vec()).prompt()?)
+    }
+
+    async fn market_order(&mut self, direction: Direction) -> Result<String> {
+        let identifier = self.rng.gen_range(0..u64::MAX);
+        let qty = inquire::prompt_u64("Quantity")?;
+
+        let result = match direction {
+            Direction::Buy => {
+                let request = tonic::Request::new(InsertMarketBuyOrderRequest { identifier, qty });
+                self.command_orderbook_client
+                    .insert_market_buy_order(request)
+                    .await
+            }
+            Direction::Sell => {
+                let request = tonic::Request::new(InsertMarketSellOrderRequest { identifier, qty });
+                self.command_orderbook_client
+                    .insert_market_sell_order(request)
+                    .await
+            }
+        };
+
+        Ok(format!("{result:?}"))
+    }
+
+    async fn limit_order(&mut self, direction: Direction) -> Result<String> {
+        let identifier = self.rng.gen_range(0..u64::MAX);
+        let qty = inquire::prompt_u64("Quantity")?;
+        let price_ticks = inquire::prompt_u64("Price ticks")?;
+
+        let result = match direction {
+            Direction::Buy => {
+                let request = tonic::Request::new(InsertLimitBuyOrderRequest {
+                    price_ticks,
+                    identifier,
+                    qty,
+                });
+                self.command_orderbook_client
+                    .insert_limit_buy_order(request)
+                    .await
+            }
+            Direction::Sell => {
+                let request = tonic::Request::new(InsertLimitSellOrderRequest {
+                    price_ticks,
+                    identifier,
+                    qty,
+                });
+                self.command_orderbook_client
+                    .insert_limit_sell_order(request)
+                    .await
+            }
+        };
+
+        Ok(format!("{result:?}"))
+    }
+
+    async fn close_order(&self) -> Result<String> {
+        let _order_id = inquire::prompt_u64("Order ID")?;
+        Ok("Close order unimplemented on client side".to_string())
+    }
+
+    async fn list_orders(&mut self, depth: u64) -> Result<String> {
+        let asks = self
+            .query_orderbook_client
+            .get_asks(tonic::Request::new(SellSideRequest { depth }))
+            .await?
+            .into_inner()
+            .orders;
+
+        let bids = self
+            .query_orderbook_client
+            .get_bids(tonic::Request::new(BuySideRequest { depth }))
+            .await?
+            .into_inner()
+            .orders;
+
+        Ok(display_orderbook(&bids, &asks))
     }
 }
 
-async fn parse_input<R: RngCore>(
-    command_orderbook_client: &mut CommandApiClient<Channel>,
-    query_orderbook_client: &mut QueryApiClient<Channel>,
-    rng: &mut R,
-    // todo change result type to generic response
-) -> Result<String> {
-    // fetch user input from cli
-    let mut input = String::new();
-    println!("Enter a command (limit prices are integer ticks): ");
-    std::io::stdin().read_line(&mut input).unwrap();
+fn display_orderbook(bids: &[OrderReply], asks: &[OrderReply]) -> String {
+    if bids.is_empty() && asks.is_empty() {
+        return String::new();
+    }
 
-    // parse user input
-    let mut input = input.split_whitespace();
-    let command = input.next().unwrap_or_default();
-    let price_ticks = input.next().unwrap_or_default();
-    let identifier: u64 = rng.gen_range(0..u64::MAX);
-    let qty = input.next().unwrap_or_default();
+    format!(
+        "Buy:\n{}\nSell:\n{}",
+        display_price_levels(bids),
+        display_price_levels(asks)
+    )
+}
 
-    match command {
-        "buy" => {
-            let request = tonic::Request::new(InsertMarketBuyOrderRequest {
-                identifier,
-                qty: qty.parse::<u64>().unwrap_or_default(),
-            });
+fn display_price_levels(orders: &[OrderReply]) -> String {
+    orders
+        .iter()
+        .map(|order| format!("{}, {}", Price::from_ticks(order.price_ticks), order.qty))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
 
-            let x = command_orderbook_client
-                .insert_market_buy_order(request)
-                .await;
+#[derive(Debug, Clone, Copy)]
+enum Direction {
+    Buy,
+    Sell,
+}
 
-            Ok(format!("{:?}", x))
+impl Direction {
+    const VARIANTS: &'static [Self] = &[Self::Buy, Self::Sell];
+}
+
+impl Display for Direction {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        write!(f, "{self:?}")
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SelectOptions {
+    MarketOrder,
+    LimitOrder,
+    OrderClose,
+    ListOrders,
+}
+
+impl SelectOptions {
+    const VARIANTS: &'static [Self] = &[
+        Self::MarketOrder,
+        Self::LimitOrder,
+        Self::OrderClose,
+        Self::ListOrders,
+    ];
+}
+
+impl Display for SelectOptions {
+    fn fmt(&self, f: &mut Formatter<'_>) -> FmtResult {
+        match self {
+            Self::MarketOrder => write!(f, "Market Order"),
+            Self::LimitOrder => write!(f, "Limit Order"),
+            Self::OrderClose => write!(f, "Close Order"),
+            Self::ListOrders => write!(f, "List Orders"),
         }
-        "limit buy" => {
-            let request = tonic::Request::new(InsertLimitBuyOrderRequest {
-                price_ticks: price_ticks.parse::<u64>().unwrap_or_default(),
-                identifier,
-                qty: qty.parse::<u64>().unwrap_or_default(),
-            });
-
-            let x = command_orderbook_client
-                .insert_limit_buy_order(request)
-                .await;
-
-            Ok(format!("{:?}", x))
-        }
-        "sell" => {
-            let request = tonic::Request::new(InsertMarketSellOrderRequest {
-                identifier,
-                qty: qty.parse::<u64>().unwrap_or_default(),
-            });
-
-            let x = command_orderbook_client
-                .insert_market_sell_order(request)
-                .await;
-            Ok(format!("{:?}", x))
-        }
-        "limit sell" => {
-            let request = tonic::Request::new(InsertLimitSellOrderRequest {
-                price_ticks: price_ticks.parse::<u64>().unwrap_or_default(),
-                identifier,
-                qty: qty.parse::<u64>().unwrap_or_default(),
-            });
-
-            let x = command_orderbook_client
-                .insert_limit_sell_order(request)
-                .await;
-            Ok(format!("{:?}", x))
-        }
-        "order close" => {
-            todo!("Close order unimplemented on client side");
-        }
-        "order ls" => {
-            let asks = query_orderbook_client
-                .get_asks(tonic::Request::new(SellSideRequest { depth: 10 }))
-                .await;
-            let bids = query_orderbook_client
-                .get_bids(tonic::Request::new(BuySideRequest { depth: 10 }))
-                .await;
-
-            Ok(format!("{:?} \n {:?}", asks, bids))
-        }
-        _ => Err(anyhow::Error::msg("Invalid command")),
     }
 }
 
@@ -129,7 +211,15 @@ async fn parse_input<R: RngCore>(
 mod tests {
     use prost::Message;
 
-    use super::api::{InsertLimitBuyOrderRequest, OrderReply};
+    use super::{
+        api::{InsertLimitBuyOrderRequest, PriceReply},
+        display_orderbook,
+    };
+
+    #[test]
+    fn empty_orderbook_has_an_empty_display() {
+        assert!(display_orderbook(&[], &[]).is_empty());
+    }
 
     #[test]
     fn protobuf_round_trip_preserves_large_tick_values() {
@@ -143,11 +233,10 @@ mod tests {
         let decoded_request =
             InsertLimitBuyOrderRequest::decode(request.encode_to_vec().as_slice()).unwrap();
 
-        let reply = OrderReply {
+        let reply = PriceReply {
             price_ticks: decoded_request.price_ticks,
-            qty: decoded_request.qty,
         };
-        let decoded_reply = OrderReply::decode(reply.encode_to_vec().as_slice()).unwrap();
+        let decoded_reply = PriceReply::decode(reply.encode_to_vec().as_slice()).unwrap();
 
         assert_eq!(decoded_request.price_ticks, LARGE_PRICE_TICKS);
         assert_eq!(decoded_reply.price_ticks, LARGE_PRICE_TICKS);

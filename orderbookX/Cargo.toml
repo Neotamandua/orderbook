@@ -8,24 +8,21 @@ name = "orderbook_benchmark"
 harness = false
 
 [dependencies]
-flamegraph = "0.6"
-indexmap = { version = "2.0", features = ["rayon"] }
-rayon = "1.7"
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+indexmap = { version = "2", features = ["rayon", "serde"] }
 tracing = "0.1"
 
 [dev-dependencies]
 rand = "0.8"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-[dependencies.proptest]
+[dependencies.price]
 workspace = true
 
-[dependencies.test-strategy]
+[dependencies.serde]
 workspace = true
 
-[dependencies.criterion]
+[dev-dependencies.proptest]
 workspace = true
 
-[profile.release]
-lto = "fat"
+[dev-dependencies.criterion] # used in benches
+workspace = true

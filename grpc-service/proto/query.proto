@@ -1,0 +1,45 @@
+// version of protocol buffer used
+syntax = "proto3";
+
+// package name for the buffer will be used later
+package query;
+
+service QueryApi {
+  // Get Orderbook Actions
+  rpc GetHighestBid (ClosestOrderRequest) returns (PriceReply);
+  rpc GetLowestAsk (ClosestOrderRequest) returns (PriceReply);
+  rpc GetBids (BuySideRequest) returns (OrderbookReply);
+  rpc GetAsks (SellSideRequest) returns (OrderbookReply);
+}
+
+  // Get highest bid or lowest ask
+  message ClosestOrderRequest {
+
+  }
+
+  // Used to represent order(s) at a specific price level
+  // with corresponding (cumulative) quantity
+  message OrderReply {
+    uint64 price_ticks = 1;
+    uint64 qty = 2;
+  }
+
+  message PriceReply {
+    uint64 price_ticks = 1;
+  }
+
+
+// Get buy side of the Orderbook
+message BuySideRequest {
+  uint64 depth = 1;
+}
+
+// Get sell side of the Orderbook
+message SellSideRequest {
+  uint64 depth = 1;
+}
+
+// Ordered price levels from the requested side of the orderbook.
+message OrderbookReply {
+  repeated OrderReply orders = 1;
+}

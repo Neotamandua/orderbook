@@ -1,4 +1,8 @@
+//! Canonical tick-based price representation.
+
 use core::fmt;
+
+use serde::{Deserialize, Serialize};
 
 /// The number of supported price ticks in one whole unit.
 pub const TICKS_PER_UNIT: u64 = 100;
@@ -7,7 +11,7 @@ pub const TICKS_PER_UNIT: u64 = 100;
 ///
 /// Keeping a single integer as the representation makes equality, hashing, and
 /// ordering agree by construction.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct Price(u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

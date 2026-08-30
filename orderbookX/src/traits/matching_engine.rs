@@ -1,10 +1,17 @@
+//! Matching Engine module for the Orderbook.
+//! Provides the `Orders` trait for the Orderbook to execute orders.
+//!
+//! Implementing the `Orders` trait allows the Orderbook to execute orders.
+
 use crate::orderbook::Order;
 
-/// MatchingEngine providing the given order types.
+/// `Orders` providing the given order types.
 /// Iceberg orders or any form of hidden orders, stop loss orders/take profit orders, one cancels other (OCO) are not supported, as users can execute them independently using API access and bots.
-pub trait MatchingEngine {
+pub trait Orders {
+    /// Market Buy until and convert the remaining order into a limit order
     fn market_buy_until(&mut self, buy_order: Order) -> (bool, u64, u64, Order);
 
+    /// Market Sell until and convert the remaining order into a limit order
     fn market_sell_until(&mut self, sell_order: Order) -> (bool, u64, u64, Order);
 
     /// Market Buy
@@ -16,11 +23,20 @@ pub trait MatchingEngine {
     /// Insert Limit Buy Order (GTC) by matching and inserting the remaining order into the orderbook
     /// A Good till Cancel (GTC) order is a buy or sell order that remains active until it is either filled or manually canceled by the trader.
     /// Unlike immediate execution orders, GTC orders can stay in the market for an extended period until they are executed or revoked by the trader.
-    fn insert_limit_buy(&mut self, order: Order);
+    ///
+    /// Returns `false` without matching when the order's identifier already
+    /// exists on the buy side at the submitted price.
+    fn insert_limit_buy(&mut self, order: Order) -> bool;
 
     /// Insert Limit Sell Order (GTC) by matching and inserting the remaining order into the orderbook
-    fn insert_limit_sell(&mut self, order: Order);
+    ///
+    /// Returns `false` without matching when the order's identifier already
+    /// exists on the sell side at the submitted price.
+    fn insert_limit_sell(&mut self, order: Order) -> bool;
+}
 
+/// `AdvancedOrders` providing the given order types.
+pub trait AdvancedOrders: Orders {
     /// Limit or Cancel
     fn limit_or_cancel_insert(&mut self, order: Order, order_type: OrderType);
 
@@ -37,7 +53,10 @@ pub trait MatchingEngine {
     fn fill_or_kill_insert(&mut self, order: Order, order_type: OrderType);
 }
 
+/// Order Type Enum
 pub enum OrderType {
+    /// Buy Order
     Buy,
+    /// Sell Order
     Sell,
 }
